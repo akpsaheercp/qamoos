@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">قاموس</string>
+    <string name="settings">الإعدادات</string>
+    <string name="library">المكتبة</string>
+    <string name="appearance">المظهر</string>
+    <string name="language">اللغة</string>
+    <string name="select_language">اختر اللغة</string>
+    <string name="english">الإنجليزية</string>
+    <string name="malayalam">المالايالامية</string>
+    <string name="arabic">العربية</string>
+    <string name="theme">المظهر</string>
+    <string name="mode">الوضع</string>
+    <string name="light">فاتح</string>
+    <string name="dark">داكن</string>
+    <string name="system">تلقائي</string>
+    <string name="font_size">حجم الخط</string>
+    <string name="preview_text">معاينة النص</string>
+    <string name="manage_dictionaries">إدارة القواميس</string>
+    <string name="history">السجل</string>
+    <string name="favorites">المفضلة</string>
+    <string name="support_community">الدعم والمجتمع</string>
+    <string name="contact_developer">اتصل بالمطور</string>
+    <string name="search_placeholder">البحث عن كلمات…</string>
+    <string name="no_dicts_title">لم يتم العثور على قواميس</string>
+    <string name="no_dicts_desc">للبدء، يرجى تثبيت قاموس واحد على الأقل من القواميس الـ 34 المتاحة من الإعدادات.</string>
+    <string name="go_to_library">اذهب إلى المكتبة</string>
+    <string name="enter_search_query">أدخل حرفاً واحداً على الأقل للبحث</string>
+    <string name="no_results_found">لم يتم العثور على نتائج لـ \'%1$s\'</string>
+</resources>

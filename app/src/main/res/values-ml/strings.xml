@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">ഖാമൂസ്</string>
+    <string name="settings">സെറ്റിംഗ്സ്</string>
+    <string name="library">ലൈബ്രറി</string>
+    <string name="appearance">അപ്പിയറൻസ്</string>
+    <string name="language">ഭാഷ</string>
+    <string name="select_language">ഭാഷ തിരഞ്ഞെടുക്കുക</string>
+    <string name="english">ഇംഗ്ലീഷ്</string>
+    <string name="malayalam">മലയാളം</string>
+    <string name="arabic">അറബിക്</string>
+    <string name="theme">പ്രമേയം</string>
+    <string name="mode">മോഡ്</string>
+    <string name="light">ലൈറ്റ്</string>
+    <string name="dark">ഡാർക്ക്</string>
+    <string name="system">സിസ്റ്റം</string>
+    <string name="font_size">അക്ഷരത്തിന്റെ വലിപ്പം</string>
+    <string name="preview_text">പ്രിവ്യൂ ടെക്സ്റ്റ്</string>
+    <string name="manage_dictionaries">നിഘണ്ടുക്കൾ ക്രമീകരിക്കുക</string>
+    <string name="history">ചരിത്രം</string>
+    <string name="favorites">പ്രിയപ്പെട്ടവ</string>
+    <string name="support_community">സഹായവും കൂട്ടായ്മയും</string>
+    <string name="contact_developer">ഡെവലപ്പറെ ബന്ധപ്പെടുക</string>
+    <string name="search_placeholder">വാക്കുകൾ തിരയുക…</string>
+    <string name="no_dicts_title">നിഘണ്ടുക്കൾ ലഭ്യമല്ല</string>
+    <string name="no_dicts_desc">തുടങ്ങുന്നതിനായി, സെറ്റിംഗ്സിൽ നിന്നും ലഭ്യമായ 34 നിഘണ്ടുക്കളിൽ ഒന്നെങ്കിലും ഇൻസ്റ്റാൾ ചെയ്യുക.</string>
+    <string name="go_to_library">ലൈബ്രറിയിലേക്ക് പോകുക</string>
+    <string name="enter_search_query">തിരയുന്നതിനായി ഒരു അക്ഷരമെങ്കിലും ടൈപ്പ് ചെയ്യുക</string>
+    <string name="no_results_found">\'%1$s\' എന്ന വാക്കിന് ഫലങ്ങളൊന്നും ലഭ്യമല്ല</string>
+</resources>

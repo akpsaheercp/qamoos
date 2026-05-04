@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">Qamoos</string>
+    <string name="settings">Settings</string>
+    <string name="library">Library</string>
+    <string name="appearance">Appearance</string>
+    <string name="language">Language</string>
+    <string name="select_language">Select Language</string>
+    <string name="english">English</string>
+    <string name="malayalam">Malayalam</string>
+    <string name="arabic">Arabic</string>
+    <string name="theme">Theme</string>
+    <string name="mode">Mode</string>
+    <string name="light">Light</string>
+    <string name="dark">Dark</string>
+    <string name="system">System</string>
+    <string name="font_size">Font Size</string>
+    <string name="preview_text">Preview Text</string>
+    <string name="manage_dictionaries">Manage Dictionaries</string>
+    <string name="history">History</string>
+    <string name="favorites">Favorites</string>
+    <string name="support_community">Support &amp; Community</string>
+    <string name="contact_developer">Contact Developer</string>
+    <string name="search_placeholder">Search for words…</string>
+    <string name="no_dicts_title">No Dictionaries Found</string>
+    <string name="no_dicts_desc">To get started, please install at least one of the 34 available dictionaries from the settings.</string>
+    <string name="go_to_library">Go to Library</string>
+    <string name="enter_search_query">Enter at least 1 character to search</string>
+    <string name="no_results_found">No results found for \'%1$s\'</string>
+</resources>
