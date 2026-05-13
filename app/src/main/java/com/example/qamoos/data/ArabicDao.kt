@@ -59,16 +59,26 @@ abstract class ArabicDao {
         query: SupportSQLiteQuery,
         attachments: List<Pair<String, String>>
     ): List<UnifiedEntry> {
-        attachments.forEach { (path, alias) ->
-            try {
-                // Use double quotes for alias to avoid issues with reserved words or special characters
-                execRawSql("ATTACH DATABASE '$path' AS \"$alias\"")
-            } catch (e: Exception) {
-                // Ignore if already attached or other attachment issues
-                // If it fails, the subsequent query might fail, but it's caught in the ViewModel
+        try {
+            attachments.forEach { (path, alias) ->
+                try {
+                    // Use double quotes for alias to avoid issues with reserved words or special characters
+                    execRawSql("ATTACH DATABASE '$path' AS \"$alias\"")
+                } catch (e: Exception) {
+                    // Ignore if already attached or other attachment issues
+                }
+            }
+            return searchAllDictionariesInternal(query)
+        } finally {
+            // Cleanup: Detach all attached databases to keep the connection clean for the next user
+            attachments.forEach { (_, alias) ->
+                try {
+                    execRawSql("DETACH DATABASE \"$alias\"")
+                } catch (e: Exception) {
+                    // Ignore if failed to detach
+                }
             }
         }
-        return searchAllDictionariesInternal(query)
     }
 
     @RawQuery

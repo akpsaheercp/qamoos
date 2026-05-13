@@ -1,5 +1,6 @@
 package com.example.qamoos.ui
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
@@ -7,11 +8,11 @@ import com.example.qamoos.data.ArabicDao
 import com.example.qamoos.data.DictionaryInfo
 import com.example.qamoos.data.UserPreferences
 import com.example.qamoos.utils.DictionaryManager
+import com.example.qamoos.utils.DictionaryUtils
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -24,6 +25,9 @@ class SettingsViewModel(
     val downloadProgress = dictionaryManager.downloadProgress
     val isPaused = dictionaryManager.isPaused
     private val _onlineDictNames = MutableStateFlow<List<String>>(emptyList())
+    
+    private val _errorMessage = MutableStateFlow<String?>(null)
+    val errorMessage: StateFlow<String?> = _errorMessage
 
     init {
         viewModelScope.launch {
@@ -33,21 +37,37 @@ class SettingsViewModel(
 
     val dictionaries: StateFlow<List<DictionaryInfo>> = combine(
         arabicDao.getAllDictionaries(),
-        downloadProgress, // Trigger update when download finishes
-        isPaused,
-        _onlineDictNames
-    ) { list, _, _, onlineNames ->
-        // Only show dictionaries that exist in our online storage
+        _onlineDictNames,
+        combine(userPreferences.selectedDictionaries, userPreferences.dictionaryOrder) { selected, order -> Pair(selected, order) }
+    ) { list, onlineNames, prefPair ->
+        val selectedSet = prefPair.first
+        val savedOrder = prefPair.second
+        
         val filteredList = if (onlineNames.isEmpty()) {
-            list // Fallback to all if offline/error during fetch
+            list
         } else {
             list.filter { it.tableName?.lowercase() in onlineNames.map { n -> n.lowercase() } }
         }
         
-        filteredList.map { it.copy() } // Just to trigger UI refresh if needed, but we'll use a better approach
-        filteredList.sortedWith(
-            compareByDescending<DictionaryInfo> { it.tableName == "taj" }
-                .thenBy { it.displayOrder ?: 0 }
+        filteredList.map { 
+            it.copy(
+                displayName = DictionaryUtils.getNativeName(it.tableName, it.displayName),
+                isSelected = if (selectedSet.contains(it.tableName)) 1 else 0,
+                displayOrder = savedOrder.indexOf(it.tableName).let { idx -> if (idx == -1) 999 else idx }
+            )
+        }.sortedWith(
+            compareBy<DictionaryInfo> { 
+                when (it.tableName?.lowercase()) {
+                    "taj" -> 1
+                    "lisanularab" -> 2
+                    "arabic" -> 3
+                    "malayalam" -> 4
+                    "english" -> 5
+                    "misbah" -> 6
+                    else -> 999
+                }
+            }.thenBy { it.displayOrder ?: 999 }
+                .thenBy { it.displayName }
         )
     }
     .stateIn(
@@ -61,20 +81,26 @@ class SettingsViewModel(
     }
 
     fun downloadDictionary(tableName: String?) {
-        val dict = dictionaries.value.find { it.tableName == tableName }
+        Log.d("SettingsViewModel", "downloadDictionary requested for: $tableName")
         tableName?.let {
+            val nativeName = DictionaryUtils.getNativeName(it, it)
             viewModelScope.launch {
                 try {
+                    _errorMessage.value = null
+                    Log.i("SettingsViewModel", "Starting download job for: $it")
                     dictionaryManager.downloadDictionary(it)
-                    // Automatically enable after successful download
-                    dict?.id?.let { id ->
-                        arabicDao.updateDictionarySelection(id, 1)
-                    }
+                    Log.i("SettingsViewModel", "Download job completed for: $it")
+                    userPreferences.toggleDictionary(it, true)
                 } catch (e: Exception) {
-                    // Handle error
+                    Log.e("SettingsViewModel", "Error in download job for: $it", e)
+                    _errorMessage.value = "Error downloading $nativeName: ${e.message ?: "Unknown error"}"
                 }
             }
-        }
+        } ?: Log.e("SettingsViewModel", "tableName is null, cannot download")
+    }
+
+    fun clearError() {
+        _errorMessage.value = null
     }
 
     fun pauseDownload(tableName: String?) {
@@ -93,8 +119,7 @@ class SettingsViewModel(
         val tableName = dictionary.tableName ?: return
         viewModelScope.launch {
             if (dictionaryManager.deleteDictionary(tableName)) {
-                // Ensure selection is turned off if deleted
-                arabicDao.updateDictionarySelection(dictionary.id ?: return@launch, 0)
+                userPreferences.toggleDictionary(tableName, false)
             }
         }
     }
@@ -128,18 +153,19 @@ class SettingsViewModel(
         )
 
     fun toggleDictionary(dictionary: DictionaryInfo) {
-        val id = dictionary.id ?: return
+        val tableName = dictionary.tableName ?: return
         viewModelScope.launch {
-            arabicDao.updateDictionarySelection(
-                id,
-                if (dictionary.isSelected == 1) 0 else 1
-            )
+            userPreferences.toggleDictionary(tableName, dictionary.isSelected != 1)
         }
     }
 
     fun toggleAllDictionaries(enable: Boolean) {
         viewModelScope.launch {
-            arabicDao.updateAllDictionariesSelection(if (enable) 1 else 0)
+            if (enable) {
+                userPreferences.updateSelectedDictionaries(dictionaries.value.mapNotNull { it.tableName }.toSet())
+            } else {
+                userPreferences.updateSelectedDictionaries(emptySet())
+            }
         }
     }
 
@@ -149,15 +175,15 @@ class SettingsViewModel(
                 val tableName = dict.tableName ?: return@forEach
                 if (!dictionaryManager.isDownloaded(tableName) && 
                     !dictionaryManager.downloadProgress.value.containsKey(tableName)) {
+                    val nativeName = DictionaryUtils.getNativeName(tableName, tableName)
                     launch {
                         try {
+                            _errorMessage.value = null
                             dictionaryManager.downloadDictionary(tableName)
-                            // Automatically enable after successful download
-                            dict.id?.let { id ->
-                                arabicDao.updateDictionarySelection(id, 1)
-                            }
+                            userPreferences.toggleDictionary(tableName, true)
                         } catch (e: Exception) {
-                            // Individual failures don't stop others
+                            Log.e("SettingsViewModel", "Error in download all for: $tableName", e)
+                            _errorMessage.value = "Error downloading $nativeName: ${e.message ?: "Unknown error"}"
                         }
                     }
                 }
@@ -167,7 +193,7 @@ class SettingsViewModel(
 
     fun updateDictionaryOrders(newOrder: List<DictionaryInfo>) {
         viewModelScope.launch {
-            arabicDao.updateDictionaryOrders(newOrder.mapNotNull { it.id })
+            userPreferences.updateDictionaryOrder(newOrder.mapNotNull { it.tableName })
         }
     }
 

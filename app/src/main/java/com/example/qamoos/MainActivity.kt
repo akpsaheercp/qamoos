@@ -58,6 +58,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import com.example.qamoos.data.AppDatabase
 import com.example.qamoos.data.UnifiedEntry
 import com.example.qamoos.data.UserPreferences
@@ -66,6 +68,7 @@ import com.example.qamoos.ui.theme.Manjari
 import com.example.qamoos.ui.theme.QamoosTheme
 import com.example.qamoos.ui.theme.ScheherazadeNew
 import com.example.qamoos.utils.DictionaryManager
+import com.example.qamoos.utils.LanguageUtils
 import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
@@ -100,7 +103,7 @@ class MainActivity : AppCompatActivity() {
                 val database = remember { AppDatabase.getDatabase(context) }
                 val dictionaryManager = remember { DictionaryManager(context) }
                 val dictionaryViewModel: DictionaryViewModel = viewModel(
-                    factory = DictionaryViewModelFactory(database.arabicDao(), dictionaryManager)
+                    factory = DictionaryViewModelFactory(database.arabicDao(), userPreferences, dictionaryManager)
                 )
                 val settingsViewModel: SettingsViewModel = viewModel(
                     factory = SettingsViewModelFactory(database.arabicDao(), userPreferences, dictionaryManager)
@@ -124,7 +127,7 @@ class MainActivity : AppCompatActivity() {
                             DictionaryScreen(
                                 viewModel = dictionaryViewModel,
                                 onNavigateToSettings = { navController.navigate("settings") },
-                                onNavigateToDictionaryList = { navController.navigate("dictionary_list") },
+                                onNavigateToLibrary = { navController.navigate("settings") },
                                 onShowLanguageDialog = { showManualLanguageDialog = true },
                                 onResultClick = { index ->
                                     navController.navigate("detail/$index")
@@ -139,18 +142,8 @@ class MainActivity : AppCompatActivity() {
                                 onDictionaryClick = { id ->
                                     navController.navigate("dictionary_detail/$id")
                                 },
-                                onNavigateToDictionaryList = { navController.navigate("dictionary_list") },
                                 onNavigateToHistory = { navController.navigate("history") },
                                 onNavigateToFavorites = { navController.navigate("favorites") }
-                            )
-                        }
-                        composable("dictionary_list") {
-                            DictionaryListScreen(
-                                viewModel = settingsViewModel,
-                                onBack = { navController.popBackStack() },
-                                onDictionaryClick = { id ->
-                                    navController.navigate("dictionary_detail/$id")
-                                }
                             )
                         }
                         composable("history") {
@@ -202,6 +195,7 @@ class MainActivity : AppCompatActivity() {
                                     initialIndex = 0,
                                     fontSizeMultiplier = fontSizeMultiplier,
                                     favoriteViewModel = favoriteViewModel,
+                                    dictionaryViewModel = dictionaryViewModel,
                                     onDismiss = { navController.popBackStack() }
                                 )
                             }
@@ -235,6 +229,7 @@ class MainActivity : AppCompatActivity() {
                                 initialIndex = index,
                                 fontSizeMultiplier = fontSizeMultiplier,
                                 favoriteViewModel = favoriteViewModel,
+                                dictionaryViewModel = dictionaryViewModel,
                                 onDismiss = { navController.popBackStack() }
                             )
                         }
@@ -247,7 +242,9 @@ class MainActivity : AppCompatActivity() {
                                     userPreferences.updateAppLanguage(languageCode)
                                     showManualLanguageDialog = false
                                 }
-                            }
+                            },
+                            isDismissible = !isFirstRun,
+                            onDismiss = { showManualLanguageDialog = false }
                         )
                     }
                 }
@@ -257,59 +254,123 @@ class MainActivity : AppCompatActivity() {
 }
 
 @Composable
-fun LanguageSelectionDialog(onLanguageSelected: (String) -> Unit) {
-    AlertDialog(
-        onDismissRequest = { }, // Force selection
-        title = { Text("Select Language / ഭാഷ തിരഞ്ഞെടുക്കുക", fontFamily = Manjari) },
-        text = {
-            Column {
-                ListItem(
-                    headlineContent = { Text("English", fontFamily = Manjari) },
-                    modifier = Modifier.clickable { onLanguageSelected("en") },
-                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) }
+fun LanguageSelectionDialog(
+    onLanguageSelected: (String) -> Unit,
+    isDismissible: Boolean = false,
+    onDismiss: () -> Unit = {}
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { if (isDismissible) onDismiss() },
+        properties = androidx.compose.ui.window.DialogProperties(
+            dismissOnBackPress = isDismissible,
+            dismissOnClickOutside = isDismissible
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(28.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Language,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
                 )
-                ListItem(
-                    headlineContent = { Text("മലയാളം", fontFamily = Manjari) },
-                    modifier = Modifier.clickable { onLanguageSelected("ml") },
-                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) }
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "App Language",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = Manjari
                 )
-                ListItem(
-                    headlineContent = { Text("العربية", fontFamily = Manjari) },
-                    modifier = Modifier.clickable { onLanguageSelected("ar") },
-                    leadingContent = { Icon(Icons.Default.Language, contentDescription = null) }
+                Text(
+                    text = "Select your preferred language\nഭാഷ തിരഞ്ഞെടുക്കുക",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    fontFamily = Manjari,
+                    modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
+                )
+
+                LanguageOption(
+                    language = "English",
+                    subtitle = "English",
+                    onClick = { onLanguageSelected("en") }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LanguageOption(
+                    language = "മലയാളം",
+                    subtitle = "Malayalam",
+                    onClick = { onLanguageSelected("ml") }
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                LanguageOption(
+                    language = "العربية",
+                    subtitle = "Arabic",
+                    onClick = { onLanguageSelected("ar") }
                 )
             }
-        },
-        confirmButton = { }
-    )
-}
-
-fun isMalayalam(text: String?): Boolean {
-    return text?.any { it in '\u0D00'..'\u0D7F' } ?: false
-}
-
-fun isArabic(text: String?): Boolean {
-    return text?.any { it in '\u0600'..'\u06FF' } ?: false
-}
-
-fun isEnglish(text: String?): Boolean {
-    val cleaned = text?.replace(Regex("<[^>]*>"), "") ?: ""
-    return cleaned.any { it in 'a'..'z' || it in 'A'..'Z' }
-}
-
-fun isLtrContent(entry: UnifiedEntry): Boolean {
-    val isMalayalamDict = entry.dictionaryName.contains("Malayalam", ignoreCase = true)
-    val isEnglishDict = entry.dictionaryName.contains("English", ignoreCase = true)
-    val word = entry.word ?: ""
-    val meaning = entry.meaning ?: ""
-    
-    if (isArabic(word) || isArabic(meaning.replace(Regex("<[^>]*>"), ""))) {
-        if (!isMalayalamDict && !isEnglishDict) return false
+        }
     }
-    
-    return isMalayalamDict || isEnglishDict || 
-           isMalayalam(meaning) || isEnglish(meaning) ||
-           isMalayalam(word) || isEnglish(word)
+}
+
+@Composable
+private fun LanguageOption(
+    language: String,
+    subtitle: String,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.4f)
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = language.take(1).uppercase(),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = if (language == "العربية") ScheherazadeNew else Manjari
+                )
+            }
+            Spacer(modifier = Modifier.width(16.dp))
+            Column {
+                Text(
+                    text = language,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = if (language == "العربية") ScheherazadeNew else Manjari
+                )
+                Text(
+                    text = subtitle,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontFamily = Manjari
+                )
+            }
+        }
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -317,7 +378,7 @@ fun isLtrContent(entry: UnifiedEntry): Boolean {
 fun DictionaryScreen(
     viewModel: DictionaryViewModel,
     onNavigateToSettings: () -> Unit,
-    onNavigateToDictionaryList: () -> Unit,
+    onNavigateToLibrary: () -> Unit,
     onShowLanguageDialog: () -> Unit,
     onResultClick: (Int) -> Unit,
     fontSizeMultiplier: Float
@@ -326,10 +387,13 @@ fun DictionaryScreen(
     val searchResults by viewModel.searchResults.collectAsState()
     val isExactMatch by viewModel.isExactMatch.collectAsState()
     val isAnyDictionaryDownloaded by viewModel.isAnyDictionaryDownloaded.collectAsState()
-    val selectedDictionaries by viewModel.selectedDictionaries.collectAsState()
+    val isFirstRun by viewModel.isFirstRun.collectAsState()
+    val dictionaries by viewModel.dictionaries.collectAsState()
     val filterDictionary by viewModel.filterDictionary.collectAsState()
     
     var showFilterDropdown by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val coroutineScope = rememberCoroutineScope()
     
     val focusRequester = remember { FocusRequester() }
     val focusManager = LocalFocusManager.current
@@ -348,7 +412,7 @@ fun DictionaryScreen(
                             )
                         )
                         
-                        if (isAnyDictionaryDownloaded) {
+                        if (isAnyDictionaryDownloaded || !isFirstRun) {
                             Spacer(modifier = Modifier.width(8.dp))
                             Box {
                                 Surface(
@@ -382,7 +446,8 @@ fun DictionaryScreen(
 
                                 DropdownMenu(
                                     expanded = showFilterDropdown,
-                                    onDismissRequest = { showFilterDropdown = false }
+                                    onDismissRequest = { showFilterDropdown = false },
+                                    modifier = Modifier.heightIn(max = 400.dp)
                                 ) {
                                     DropdownMenuItem(
                                         text = { Text("All Dictionaries", fontFamily = Manjari) },
@@ -392,7 +457,10 @@ fun DictionaryScreen(
                                         }
                                     )
                                     HorizontalDivider()
-                                    selectedDictionaries.filter { viewModel.isDownloaded(it.tableName ?: "") }.forEach { dict ->
+                                    dictionaries
+                                        .filter { d -> d.isSelected == 1 && viewModel.isDownloaded(d.tableName ?: "") }
+                                        .sortedBy { it.displayOrder ?: 999 }
+                                        .forEach { dict ->
                                         DropdownMenuItem(
                                             text = { 
                                                 Text(
@@ -413,7 +481,24 @@ fun DictionaryScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.toggleExactMatch() }) {
+                    IconButton(onClick = onNavigateToLibrary) {
+                        Icon(
+                            Icons.Default.LibraryBooks,
+                            contentDescription = "Manage Dictionaries",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    IconButton(onClick = { 
+                        viewModel.toggleExactMatch()
+                        coroutineScope.launch {
+                            val msg = if (!isExactMatch) "Exact match enabled" else "Exact match disabled"
+                            snackbarHostState.currentSnackbarData?.dismiss()
+                            snackbarHostState.showSnackbar(
+                                message = msg,
+                                duration = SnackbarDuration.Short
+                            )
+                        }
+                    }) {
                         Icon(
                             if (isExactMatch) Icons.Default.FilterList else Icons.Default.FilterListOff,
                             contentDescription = "Toggle Exact Match",
@@ -436,14 +521,15 @@ fun DictionaryScreen(
                     titleContentColor = MaterialTheme.colorScheme.primary
                 )
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         Column(
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            if (!isAnyDictionaryDownloaded) {
+            if (!isAnyDictionaryDownloaded && isFirstRun) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -483,7 +569,7 @@ fun DictionaryScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                             Button(
-                                onClick = onNavigateToDictionaryList,
+                                onClick = onNavigateToLibrary,
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -500,7 +586,7 @@ fun DictionaryScreen(
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                         .fillMaxWidth()
                 ) {
-                    val isQueryLtr = isMalayalam(searchQuery) || isEnglish(searchQuery)
+                    val isQueryLtr = LanguageUtils.isMalayalam(searchQuery) || LanguageUtils.isEnglish(searchQuery)
                     CompositionLocalProvider(LocalLayoutDirection provides if (isQueryLtr) LayoutDirection.Ltr else LayoutDirection.Rtl) {
                         OutlinedTextField(
                             value = searchQuery,
@@ -679,6 +765,7 @@ fun DetailPagerScreen(
     initialIndex: Int,
     fontSizeMultiplier: Float,
     favoriteViewModel: FavoriteViewModel,
+    dictionaryViewModel: DictionaryViewModel,
     onDismiss: () -> Unit
 ) {
     if (results.isEmpty()) return
@@ -707,7 +794,12 @@ fun DetailPagerScreen(
         }
     }
     
-    val uniqueDictionaries = remember(results) { results.map { it.dictionaryName }.distinct() }
+    val dictionariesFlow by dictionaryViewModel.dictionaries.collectAsState()
+    val uniqueDictionaries = remember(results, dictionariesFlow) { 
+        results.map { it.dictionaryName }.distinct().sortedBy { name ->
+            dictionariesFlow.find { it.displayName == name }?.displayOrder ?: 999
+        }
+    }
     var selectedDict by remember { mutableStateOf(results.getOrNull(initialIndex)?.dictionaryName ?: uniqueDictionaries[0]) }
     var expanded by remember { mutableStateOf(false) }
 
@@ -725,6 +817,28 @@ fun DetailPagerScreen(
         initialPage = initialPage,
         pageCount = { filteredResults.size }
     )
+
+    val context = LocalContext.current
+    val window = (context as? android.app.Activity)?.window
+    val insetsController = remember(window) {
+        window?.let { WindowInsetsControllerCompat(it, it.decorView) }
+    }
+
+    LaunchedEffect(scrollBehavior.state.collapsedFraction) {
+        if (scrollBehavior.state.collapsedFraction > 0.5f) {
+            insetsController?.hide(WindowInsetsCompat.Type.statusBars())
+            insetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        } else {
+            insetsController?.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
+
+    // Ensure status bar is shown when leaving this screen
+    DisposableEffect(Unit) {
+        onDispose {
+            insetsController?.show(WindowInsetsCompat.Type.statusBars())
+        }
+    }
 
     LaunchedEffect(selectedDict) {
         if (pagerState.currentPage >= filteredResults.size) {
@@ -747,7 +861,7 @@ fun DetailPagerScreen(
                 key = { page -> filteredResults.getOrNull(page)?.let { "${it.dictionaryName}_${it.id}" } ?: page }
             ) { page ->
                 val pageEntry = filteredResults[page]
-                val isLtr = isLtrContent(pageEntry)
+                val isLtr = LanguageUtils.isLtrContent(pageEntry)
                 val rawMeaning = pageEntry.meaning ?: ""
 
                 Column(
@@ -832,13 +946,13 @@ fun DetailPagerScreen(
                                 }
                             } else {
                                 val cleanedMeaning = cleanHtml(rawMeaning)
-                                val displayMeaning = if (isMalayalam(cleanedMeaning) || isEnglish(cleanedMeaning)) {
+                                val displayMeaning = if (LanguageUtils.isMalayalam(cleanedMeaning) || LanguageUtils.isEnglish(cleanedMeaning)) {
                                     cleanedMeaning.split(",").joinToString("\n") { it.trim() }
                                 } else {
                                     cleanedMeaning
                                 }
                                 
-                                val useManjariForMeaning = isMalayalam(displayMeaning) || isEnglish(displayMeaning) || isLtr
+                                val useManjariForMeaning = LanguageUtils.isMalayalam(displayMeaning) || LanguageUtils.isEnglish(displayMeaning) || isLtr
                                 
                                 MeaningSection(
                                     title = null,
@@ -873,7 +987,7 @@ fun DetailPagerScreen(
                     TopAppBar(
                         title = {
                             val word = currentEntry?.word ?: ""
-                            val useManjariForWord = isMalayalam(word) || (currentEntry?.dictionaryName?.contains("Malayalam", ignoreCase = true) ?: false)
+                            val useManjariForWord = LanguageUtils.isMalayalam(word) || (currentEntry?.dictionaryName?.contains("Malayalam", ignoreCase = true) ?: false)
 
                             Text(
                                 text = word,
@@ -925,7 +1039,8 @@ fun DetailPagerScreen(
 
                                     DropdownMenu(
                                         expanded = expanded && alpha > 0.5f,
-                                        onDismissRequest = { expanded = false }
+                                        onDismissRequest = { expanded = false },
+                                        modifier = Modifier.heightIn(max = 400.dp)
                                     ) {
                                         uniqueDictionaries.forEach { dictName ->
                                             DropdownMenuItem(
@@ -985,7 +1100,7 @@ fun DetailPagerScreen(
                                                 if (mal.isNotEmpty()) append("Malayalam:\n${mal.split(",").joinToString("\n") { it.trim() }}\n\n")
                                                 if (eng.isNotEmpty()) append("English:\n${eng.split(",").joinToString("\n") { it.trim() }}")
                                             }.trim()
-                                        } else if (isMalayalam(rawMeaning)) {
+                                        } else if (LanguageUtils.isMalayalam(rawMeaning)) {
                                             rawMeaning.split(",").joinToString("\n") { it.trim() }
                                         } else {
                                             rawMeaning

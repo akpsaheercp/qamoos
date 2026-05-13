@@ -17,11 +17,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.qamoos.data.UnifiedEntry
-import com.example.qamoos.isEnglish
-import com.example.qamoos.isLtrContent
-import com.example.qamoos.isMalayalam
 import com.example.qamoos.ui.theme.Manjari
 import com.example.qamoos.ui.theme.ScheherazadeNew
+import com.example.qamoos.utils.LanguageUtils
 
 fun cleanHtml(text: String?): String {
     if (text == null) return ""
@@ -78,7 +76,7 @@ fun DictionaryResultCard(
                 }
                 Spacer(modifier = Modifier.weight(1f))
                 
-                val useManjariForWord = isMalayalam(entry.word) || entry.dictionaryName.contains("Malayalam", ignoreCase = true)
+                val useManjariForWord = LanguageUtils.isMalayalam(entry.word) || entry.dictionaryName.contains("Malayalam", ignoreCase = true)
                 
                 Text(
                     text = entry.word ?: "",
@@ -94,8 +92,8 @@ fun DictionaryResultCard(
             }
             Spacer(modifier = Modifier.height(2.dp))
             
-            val isLtr = isLtrContent(entry)
-            val isMal = isMalayalam(entry.meaning) || entry.dictionaryName.contains("Malayalam", ignoreCase = true)
+            val isLtr = LanguageUtils.isLtrContent(entry)
+            val isMal = LanguageUtils.isMalayalam(entry.meaning) || entry.dictionaryName.contains("Malayalam", ignoreCase = true)
             
             val displayMeaning = if (entry.meaning?.contains("[[") == true) {
                 if (entry.meaning.contains("[[SUBHEADING]]")) {

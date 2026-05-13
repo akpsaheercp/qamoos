@@ -14,6 +14,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.example.qamoos.data.UnifiedEntry
 import com.example.qamoos.ui.theme.Manjari
+import com.example.qamoos.utils.DictionaryUtils
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -56,7 +57,7 @@ fun FavoriteScreen(
                         word = entry.word,
                         wordNoHarakah = entry.word,
                         meaning = entry.meaning,
-                        dictionaryName = entry.dictionaryName
+                        dictionaryName = DictionaryUtils.getNativeName(null, entry.dictionaryName)
                     )
                     DictionaryResultCard(
                         entry = unifiedEntry,

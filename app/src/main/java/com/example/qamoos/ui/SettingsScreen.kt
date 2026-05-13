@@ -3,31 +3,47 @@ package com.example.qamoos.ui
 import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
+import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Download
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Language
-import androidx.compose.material.icons.filled.Palette
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.TextFields
+import androidx.compose.material.icons.automirrored.filled.Message
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.example.qamoos.R
+import com.example.qamoos.data.DictionaryInfo
 import com.example.qamoos.ui.theme.Manjari
+import com.example.qamoos.ui.theme.ScheherazadeNew
+import com.example.qamoos.utils.DictionaryMetadata
+import com.example.qamoos.utils.LanguageUtils
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -35,273 +51,633 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
     onDictionaryClick: (Int) -> Unit,
-    onNavigateToDictionaryList: () -> Unit,
     onNavigateToHistory: () -> Unit,
     onNavigateToFavorites: () -> Unit
 ) {
     val fontSizeMultiplier by viewModel.fontSizeMultiplier.collectAsState()
     val darkThemeConfig by viewModel.darkThemeConfig.collectAsState()
+    val appLanguage by viewModel.appLanguage.collectAsState()
+    val dictionaries by viewModel.dictionaries.collectAsState()
+    val errorMessage by viewModel.errorMessage.collectAsState()
+    
+    var isReorderMode by remember { mutableStateOf(false) }
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    LaunchedEffect(errorMessage) {
+        errorMessage?.let {
+            snackbarHostState.showSnackbar(it)
+            viewModel.clearError()
+        }
+    }
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.settings), fontFamily = Manjari) },
+            LargeTopAppBar(
+                title = { 
+                    Text(
+                        stringResource(R.string.settings), 
+                        fontFamily = Manjari,
+                        fontWeight = FontWeight.Bold
+                    ) 
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    scrolledContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(3.dp)
+                )
             )
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
                 .padding(innerPadding)
-                .fillMaxSize()
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            contentPadding = PaddingValues(bottom = 24.dp, top = 16.dp)
+                .fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 32.dp)
         ) {
+            // --- Library Tools ---
+            item { SettingsSectionHeader(title = "Tools") }
             item {
-                Text(stringResource(R.string.library), style = MaterialTheme.typography.titleLarge, fontFamily = Manjari)
-            }
-
-            item {
-                Card {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.manage_dictionaries), fontFamily = Manjari) },
-                            supportingContent = { Text("Download and reorder dictionaries", fontFamily = Manjari) },
-                            leadingContent = { Icon(Icons.Default.Download, contentDescription = null) },
-                            trailingContent = { Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                            modifier = Modifier.clickable(onClick = onNavigateToDictionaryList)
-                        )
-                        HorizontalDivider()
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.history), fontFamily = Manjari) },
-                            supportingContent = { Text("Previously viewed meanings", fontFamily = Manjari) },
-                            leadingContent = { Icon(Icons.Default.History, contentDescription = null) },
-                            modifier = Modifier.clickable(onClick = onNavigateToHistory)
-                        )
-                        HorizontalDivider()
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.favorites), fontFamily = Manjari) },
-                            supportingContent = { Text("Saved words and meanings", fontFamily = Manjari) },
-                            leadingContent = { Icon(Icons.Default.Favorite, contentDescription = null) },
-                            modifier = Modifier.clickable(onClick = onNavigateToFavorites)
-                        )
-                    }
+                SettingsGroup {
+                    SettingsClickableItem(
+                        title = stringResource(R.string.history),
+                        description = "Previously viewed meanings",
+                        icon = Icons.Default.History,
+                        onClick = onNavigateToHistory
+                    )
+                    SettingsClickableItem(
+                        title = stringResource(R.string.favorites),
+                        description = "Saved words and meanings",
+                        icon = Icons.Default.Favorite,
+                        onClick = onNavigateToFavorites
+                    )
                 }
             }
 
-            item {
-                Text(stringResource(R.string.appearance), style = MaterialTheme.typography.titleLarge, fontFamily = Manjari)
-            }
-
-            item {
-                val appLanguage by viewModel.appLanguage.collectAsState()
-                Card {
-                    Column(modifier = Modifier.padding(8.dp)) {
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.theme), fontFamily = Manjari) },
-                            supportingContent = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                    horizontalArrangement = Arrangement.Start
-                                ) {
-                                    FilterChip(
-                                        selected = darkThemeConfig == "light",
-                                        onClick = { viewModel.updateTheme("light") },
-                                        label = { Text(stringResource(R.string.light), fontFamily = Manjari) }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    FilterChip(
-                                        selected = darkThemeConfig == "dark",
-                                        onClick = { viewModel.updateTheme("dark") },
-                                        label = { Text(stringResource(R.string.dark), fontFamily = Manjari) }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    FilterChip(
-                                        selected = darkThemeConfig == "system",
-                                        onClick = { viewModel.updateTheme("system") },
-                                        label = { Text(stringResource(R.string.system), fontFamily = Manjari) }
-                                    )
-                                }
-                            },
-                            leadingContent = { Icon(Icons.Default.Palette, contentDescription = null) }
-                        )
-                        HorizontalDivider()
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.language), fontFamily = Manjari) },
-                            supportingContent = {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
-                                    horizontalArrangement = Arrangement.Start
-                                ) {
-                                    FilterChip(
-                                        selected = appLanguage == "en",
-                                        onClick = { viewModel.updateLanguage("en") },
-                                        label = { Text(stringResource(R.string.english), fontFamily = Manjari) }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    FilterChip(
-                                        selected = appLanguage == "ml",
-                                        onClick = { viewModel.updateLanguage("ml") },
-                                        label = { Text(stringResource(R.string.malayalam), fontFamily = Manjari) }
-                                    )
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    FilterChip(
-                                        selected = appLanguage == "ar",
-                                        onClick = { viewModel.updateLanguage("ar") },
-                                        label = { Text(stringResource(R.string.arabic), fontFamily = Manjari) }
-                                    )
-                                }
-                            },
-                            leadingContent = { Icon(Icons.Default.Language, contentDescription = null) }
-                        )
-                        HorizontalDivider()
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.font_size), fontFamily = Manjari) },
-                            supportingContent = {
-                                Column(modifier = Modifier.padding(top = 8.dp)) {
-                                    Slider(
-                                        value = fontSizeMultiplier,
-                                        onValueChange = { viewModel.updateFontSize(it) },
-                                        valueRange = 0.8f..1.5f,
-                                        steps = 7
-                                    )
-                                    Text(
-                                        stringResource(R.string.preview_text),
-                                        fontSize = (16 * fontSizeMultiplier).sp,
-                                        fontFamily = Manjari,
-                                        modifier = Modifier.padding(bottom = 8.dp)
-                                    )
-                                }
-                            },
-                            leadingContent = { Icon(Icons.Default.TextFields, contentDescription = null) }
-                        )
-                    }
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(stringResource(R.string.support_community), style = MaterialTheme.typography.titleLarge, fontFamily = Manjari)
-            }
-
-            item {
-                val uriHandler = LocalUriHandler.current
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+            // --- Dictionary Management ---
+            item { 
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Join our community for discussions, updates, and feedback.",
-                            fontFamily = Manjari,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Button(
-                            onClick = { uriHandler.openUri("https://t.me/qamoos") },
-                            modifier = Modifier.fillMaxWidth(),
-                            contentPadding = PaddingValues(12.dp)
-                        ) {
-                            Icon(Icons.Default.Send, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Join for Discussion & Updates", fontFamily = Manjari)
+                    SettingsSectionHeader(title = stringResource(R.string.manage_dictionaries))
+                    Row {
+                        IconButton(onClick = { isReorderMode = !isReorderMode }) {
+                            Icon(
+                                if (isReorderMode) Icons.Default.Done else Icons.Default.Reorder, 
+                                contentDescription = "Reorder",
+                                tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        TextButton(onClick = { viewModel.downloadAllDictionaries() }) {
+                            Icon(Icons.Default.DownloadForOffline, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Download All", fontFamily = Manjari, fontSize = 12.sp)
                         }
                     }
                 }
             }
-
+            
             item {
-                val context = LocalContext.current
                 Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
                     )
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Support the Project",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontFamily = Manjari,
-                            color = MaterialTheme.colorScheme.primary
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.Info, 
+                            contentDescription = null, 
+                            tint = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.size(20.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.width(12.dp))
                         Text(
-                            text = "ഈ ആപ്ലിക്കേഷൻ പ്ലേസ്റ്റോറിൽ നിലനിർത്തുന്നതിനും പുതിയ അപ്‌ഡേറ്റുകൾ നൽകുന്നതിനും ഗൂഗിളിന് നിശ്ചിത തുക നൽകേണ്ടതുണ്ട്. നിങ്ങളുടെ ചെറിയൊരു സഹായം ഈ സംരംഭത്തെ മുന്നോട്ട് കൊണ്ടുപോകാൻ സഹായിക്കും.",
+                            text = if (isReorderMode) "Use arrows to move dictionaries up or down." else "Enable dictionaries to include them in search results.",
+                            style = MaterialTheme.typography.bodySmall,
                             fontFamily = Manjari,
-                            style = MaterialTheme.typography.bodyMedium,
-                            lineHeight = 20.sp
+                            color = MaterialTheme.colorScheme.onTertiaryContainer
                         )
-                        Spacer(modifier = Modifier.height(16.dp))
-                        Button(
-                            onClick = {
-                                val upiUri = Uri.parse("upi://pay?pa=akpsaheer@okhdfcbank&pn=QamoosApp&cu=INR")
-                                val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
-                                val chooser = Intent.createChooser(upiIntent, "Donate via UPI")
-                                try {
-                                    context.startActivity(chooser)
-                                } catch (e: Exception) {
-                                    Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.primary
-                            )
-                        ) {
-                            Text("Donate via UPI", fontFamily = Manjari)
-                        }
                     }
                 }
             }
 
+            itemsIndexed(
+                items = dictionaries,
+                key = { _, dict -> dict.tableName ?: dict.hashCode() }
+            ) { index, dict ->
+                DictionarySettingsItem(
+                    dict = dict,
+                    viewModel = viewModel,
+                    isReorderMode = isReorderMode,
+                    onMoveUp = {
+                        if (index > 0) {
+                            val newList = dictionaries.toMutableList()
+                            val item = newList.removeAt(index)
+                            newList.add(index - 1, item)
+                            viewModel.updateDictionaryOrders(newList)
+                        }
+                    },
+                    onMoveDown = {
+                        if (index < dictionaries.size - 1) {
+                            val newList = dictionaries.toMutableList()
+                            val item = newList.removeAt(index)
+                            newList.add(index + 1, item)
+                            viewModel.updateDictionaryOrders(newList)
+                        }
+                    },
+                    onDownloadClick = { viewModel.downloadDictionary(dict.tableName) },
+                    onPauseClick = { viewModel.pauseDownload(dict.tableName) },
+                    onResumeClick = { viewModel.resumeDownload(dict.tableName) },
+                    onCancelClick = { viewModel.cancelDownload(dict.tableName) },
+                    onDeleteClick = { viewModel.deleteDictionary(dict) },
+                    onToggle = { viewModel.toggleDictionary(dict) },
+                    onClick = { dict.id?.let { onDictionaryClick(it) } }
+                )
+            }
+
+            // --- Appearance Section ---
+            item { SettingsSectionHeader(title = stringResource(R.string.appearance)) }
             item {
-                Spacer(modifier = Modifier.height(16.dp))
-                Text("Contact Developer", style = MaterialTheme.typography.titleLarge, fontFamily = Manjari)
+                SettingsGroup {
+                    SettingsSelectionItem(
+                        title = stringResource(R.string.theme),
+                        icon = Icons.Default.Palette,
+                        options = listOf("light", "dark", "system"),
+                        selectedOption = darkThemeConfig,
+                        onOptionSelected = { viewModel.updateTheme(it) },
+                        optionLabels = mapOf(
+                            "light" to stringResource(R.string.light),
+                            "dark" to stringResource(R.string.dark),
+                            "system" to stringResource(R.string.system)
+                        )
+                    )
+                    SettingsSelectionItem(
+                        title = stringResource(R.string.language),
+                        icon = Icons.Default.Language,
+                        options = listOf("en", "ml", "ar"),
+                        selectedOption = appLanguage ?: "en",
+                        onOptionSelected = { viewModel.updateLanguage(it) },
+                        optionLabels = mapOf(
+                            "en" to "English",
+                            "ml" to "മലയാളം",
+                            "ar" to "العربية"
+                        )
+                    )
+                    SettingsSliderItem(
+                        title = stringResource(R.string.font_size),
+                        icon = Icons.Default.TextFields,
+                        value = fontSizeMultiplier,
+                        onValueChange = { viewModel.updateFontSize(it) },
+                        range = 0.8f..1.5f,
+                        steps = 7,
+                        previewText = stringResource(R.string.preview_text)
+                    )
+                }
+            }
+
+            // --- Community & Support ---
+            item { SettingsSectionHeader(title = "Community & Support") }
+            item {
+                SettingsGroup {
+                    val uriHandler = LocalUriHandler.current
+                    SettingsClickableItem(
+                        title = "Telegram Community",
+                        description = "Join for discussions and updates",
+                        icon = Icons.AutoMirrored.Filled.Message,
+                        onClick = { uriHandler.openUri("https://t.me/qamoos") }
+                    )
+                    SettingsClickableItem(
+                        title = "Contact Developer",
+                        description = "WhatsApp or Telegram for feedback",
+                        icon = Icons.Default.Person,
+                        onClick = { uriHandler.openUri("https://wa.me/917902520097") }
+                    )
+                }
+            }
+
+            // --- Support the Project (Donation) ---
+            item {
+                DonationCard(
+                    onDonateClick = {
+                        val upiUri = Uri.parse("upi://pay?pa=akpsaheer@okhdfcbank&pn=QamoosApp&cu=INR")
+                        val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
+                        val chooser = Intent.createChooser(upiIntent, "Donate via UPI")
+                        try {
+                            context.startActivity(chooser)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                )
             }
 
             item {
-                val uriHandler = LocalUriHandler.current
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Feel free to reach out personally for queries or suggestions.",
-                            fontFamily = Manjari,
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                    Text(
+                        text = "Version 1.0.0",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        fontFamily = Manjari
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DictionarySettingsItem(
+    dict: DictionaryInfo,
+    viewModel: SettingsViewModel,
+    isReorderMode: Boolean = false,
+    onMoveUp: () -> Unit = {},
+    onMoveDown: () -> Unit = {},
+    onDownloadClick: () -> Unit,
+    onPauseClick: () -> Unit,
+    onResumeClick: () -> Unit,
+    onCancelClick: () -> Unit,
+    onDeleteClick: () -> Unit,
+    onToggle: () -> Unit,
+    onClick: () -> Unit
+) {
+    val haptic = LocalHapticFeedback.current
+    val isDownloaded = viewModel.isDownloaded(dict.tableName)
+    val progressMap by viewModel.downloadProgress.collectAsState()
+    val isPausedMap by viewModel.isPaused.collectAsState()
+    
+    val downloadProgress = progressMap[dict.tableName]
+    val isPaused = isPausedMap[dict.tableName] ?: false
+    
+    ListItem(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp),
+        headlineContent = {
+            val isArabicName = LanguageUtils.isArabic(dict.displayName)
+            Text(
+                text = dict.displayName ?: "Unknown",
+                fontFamily = if (isArabicName) com.example.qamoos.ui.theme.ScheherazadeNew else Manjari,
+                fontWeight = FontWeight.Bold,
+                fontSize = if (isArabicName) 18.sp else 16.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        supportingContent = {
+            Text(
+                text = when {
+                    isDownloaded -> "Installed"
+                    downloadProgress != null -> if (isPaused) "Paused" else "Downloading ${downloadProgress.toInt()}%"
+                    else -> DictionaryMetadata.getSize(dict.tableName)
+                },
+                fontFamily = Manjari,
+                fontSize = 12.sp,
+                color = when {
+                    isDownloaded -> MaterialTheme.colorScheme.primary
+                    downloadProgress != null -> MaterialTheme.colorScheme.tertiary
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        },
+        leadingContent = {
+            if (isReorderMode) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    IconButton(onClick = onMoveUp, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up")
+                    }
+                    IconButton(onClick = onMoveDown, modifier = Modifier.size(24.dp)) {
+                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down")
+                    }
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (dict.isSelected == 1 && isDownloaded) 
+                                MaterialTheme.colorScheme.primaryContainer 
+                            else 
+                                MaterialTheme.colorScheme.surfaceVariant
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = if (isDownloaded) Icons.Default.Book else Icons.Default.CloudDownload,
+                        contentDescription = null,
+                        tint = if (dict.isSelected == 1 && isDownloaded) 
+                            MaterialTheme.colorScheme.onPrimaryContainer 
+                        else 
+                            MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+        },
+        trailingContent = {
+            if (isReorderMode) {
+                Icon(Icons.Default.DragHandle, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isDownloaded) {
+                        var showDeleteDialog by remember { mutableStateOf(false) }
+                        
+                        if (showDeleteDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showDeleteDialog = false },
+                                title = { Text("Delete Dictionary", fontFamily = Manjari) },
+                                text = { Text("Are you sure you want to delete ${dict.displayName}?", fontFamily = Manjari) },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        onDeleteClick()
+                                        showDeleteDialog = false
+                                    }) {
+                                        Text("Delete", color = MaterialTheme.colorScheme.error, fontFamily = Manjari)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showDeleteDialog = false }) {
+                                        Text("Cancel", fontFamily = Manjari)
+                                    }
+                                }
+                            )
+                        }
+
+                        IconButton(onClick = { showDeleteDialog = true }) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+                        }
+                        
+                        Switch(
+                            checked = dict.isSelected == 1,
+                            onCheckedChange = { 
+                                onToggle()
+                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            },
+                            modifier = Modifier.scale(0.8f)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Button(
-                                onClick = { uriHandler.openUri("https://wa.me/917902520097") },
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(12.dp)
-                            ) {
-                                Text("WhatsApp", fontFamily = Manjari)
+                    } else if (downloadProgress != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = if (isPaused) onResumeClick else onPauseClick) {
+                                Icon(
+                                    if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.tertiary
+                                )
                             }
-                            Button(
-                                onClick = { uriHandler.openUri("https://t.me/+917902520097") },
-                                modifier = Modifier.weight(1f),
-                                contentPadding = PaddingValues(12.dp)
-                            ) {
-                                Text("Telegram", fontFamily = Manjari)
+                            IconButton(onClick = onCancelClick) {
+                                Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error)
                             }
+                        }
+                    } else {
+                        IconButton(onClick = onDownloadClick) {
+                            Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
+            }
+        },
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+    
+    if (downloadProgress != null && !isDownloaded) {
+        LinearProgressIndicator(
+            progress = { downloadProgress / 100f },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 24.dp)
+                .height(2.dp)
+                .clip(CircleShape),
+            color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
+            trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+        )
+    }
+}
+
+@Composable
+fun SettingsSectionHeader(title: String) {
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelLarge,
+        fontFamily = Manjari,
+        fontWeight = FontWeight.Bold,
+        color = MaterialTheme.colorScheme.primary,
+        modifier = Modifier.padding(start = 24.dp, top = 24.dp, bottom = 8.dp)
+    )
+}
+
+@Composable
+fun SettingsGroup(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 4.dp),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+        )
+    ) {
+        Column(content = content)
+    }
+}
+
+@Composable
+fun SettingsClickableItem(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit
+) {
+    ListItem(
+        headlineContent = { Text(title, fontFamily = Manjari, fontWeight = FontWeight.SemiBold) },
+        supportingContent = { Text(description, fontFamily = Manjari, fontSize = 13.sp) },
+        leadingContent = {
+            Surface(
+                modifier = Modifier.size(40.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        },
+        trailingContent = { Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.outline) },
+        modifier = Modifier.clickable(onClick = onClick),
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsSelectionItem(
+    title: String,
+    icon: ImageVector,
+    options: List<String>,
+    selectedOption: String,
+    onOptionSelected: (String) -> Unit,
+    optionLabels: Map<String, String>
+) {
+    Column(modifier = Modifier.padding(vertical = 12.dp)) {
+        ListItem(
+            headlineContent = { Text(title, fontFamily = Manjari, fontWeight = FontWeight.SemiBold) },
+            leadingContent = {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.1f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.secondary)
+                    }
+                }
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+        
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp)
+        ) {
+            options.forEachIndexed { index, option ->
+                SegmentedButton(
+                    selected = selectedOption == option,
+                    onClick = { onOptionSelected(option) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    label = { 
+                        Text(
+                            optionLabels[option] ?: option, 
+                            fontFamily = Manjari, 
+                            fontSize = 12.sp,
+                            maxLines = 1
+                        ) 
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SettingsSliderItem(
+    title: String,
+    icon: ImageVector,
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    range: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    previewText: String
+) {
+    Column(modifier = Modifier.padding(bottom = 16.dp)) {
+        ListItem(
+            headlineContent = { Text(title, fontFamily = Manjari, fontWeight = FontWeight.SemiBold) },
+            leadingContent = {
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = MaterialTheme.colorScheme.tertiary)
+                    }
+                }
+            },
+            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+        )
+        
+        Column(modifier = Modifier.padding(horizontal = 24.dp)) {
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = range,
+                steps = steps,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = previewText,
+                fontSize = (16 * value).sp,
+                fontFamily = Manjari,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.align(Alignment.CenterHorizontally).padding(top = 8.dp)
+            )
+        }
+    }
+}
+
+@Composable
+fun DonationCard(onDonateClick: () -> Unit) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        shape = RoundedCornerShape(28.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        )
+    ) {
+        Column(modifier = Modifier.padding(24.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    modifier = Modifier.size(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.1f)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            Icons.Default.VolunteerActivism, 
+                            contentDescription = null, 
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Text(
+                    text = "Support the Project",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontFamily = Manjari,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "ഈ സംരംഭം തുടർന്ന് കൊണ്ടുപോകുന്നതിനായി നിങ്ങളുടെ സഹായം അഭ്യർത്ഥിക്കുന്നു. ചെറിയൊരു തുക സംഭാവന ചെയ്യുന്നത് ആപ്ലിക്കേഷൻ അപ്‌ഡേറ്റുകൾ നൽകാൻ ഞങ്ങളെ സഹായിക്കും.",
+                fontFamily = Manjari,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                lineHeight = 22.sp
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            Button(
+                onClick = onDonateClick,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    contentColor = MaterialTheme.colorScheme.primaryContainer
+                )
+            ) {
+                Icon(Icons.Default.AccountBalanceWallet, contentDescription = null)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Donate via UPI", fontFamily = Manjari, fontWeight = FontWeight.Bold)
             }
         }
     }
