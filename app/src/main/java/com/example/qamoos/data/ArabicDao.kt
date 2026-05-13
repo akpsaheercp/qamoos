@@ -2,25 +2,11 @@ package com.example.qamoos.data
 
 import androidx.room.Dao
 import androidx.room.Query
-import androidx.room.RawQuery
 import androidx.room.Transaction
-import androidx.sqlite.db.SimpleSQLiteQuery
-import androidx.sqlite.db.SupportSQLiteQuery
 import kotlinx.coroutines.flow.Flow
 
 @Dao
 abstract class ArabicDao {
-    /**
-     * Surgical search across dynamic tables.
-     */
-    @RawQuery(observedEntities = [DictionaryInfo::class])
-    abstract fun searchAllDictionaries(query: SupportSQLiteQuery): Flow<List<UnifiedEntry>>
-
-    /**
-     * One-shot search for transactional use.
-     */
-    @RawQuery(observedEntities = [DictionaryInfo::class])
-    abstract suspend fun searchAllDictionariesInternal(query: SupportSQLiteQuery): List<UnifiedEntry>
 
     @Query("SELECT * FROM dictionary_info WHERE is_selected = 1 ORDER BY display_order ASC")
     abstract fun getSelectedDictionaries(): Flow<List<DictionaryInfo>>
@@ -39,53 +25,6 @@ abstract class ArabicDao {
 
     @Query("UPDATE dictionary_info SET display_order = :displayOrder WHERE id = :id")
     abstract suspend fun updateDictionaryOrder(id: Int, displayOrder: Int)
-
-    @Transaction
-    open suspend fun attachDatabase(path: String, alias: String) {
-        try {
-            execRawSql("ATTACH DATABASE '$path' AS $alias")
-        } catch (_: Exception) {
-            // Usually occurs if already attached
-        }
-    }
-
-    /**
-     * Attaches multiple databases and performs search in a single transaction.
-     * This ensures all operations use the same connection.
-     */
-    @Transaction
-    open suspend fun searchWithAttachments(
-        query: SupportSQLiteQuery,
-        attachments: List<Pair<String, String>>
-    ): List<UnifiedEntry> {
-        try {
-            attachments.forEach { (path, alias) ->
-                try {
-                    // Use double quotes for alias to avoid issues with reserved words or special characters
-                    execRawSql("ATTACH DATABASE '$path' AS \"$alias\"")
-                } catch (_: Exception) {
-                    // Ignore if already attached or other attachment issues
-                }
-            }
-            return searchAllDictionariesInternal(query)
-        } finally {
-            // Cleanup: Detach all attached databases to keep the connection clean for the next user
-            attachments.forEach { (_, alias) ->
-                try {
-                    execRawSql("DETACH DATABASE \"$alias\"")
-                } catch (_: Exception) {
-                    // Ignore if failed to detach
-                }
-            }
-        }
-    }
-
-    @RawQuery
-    abstract suspend fun performRawQuery(query: SupportSQLiteQuery): Int
-
-    suspend fun execRawSql(sql: String) {
-        performRawQuery(SimpleSQLiteQuery(sql))
-    }
 
     @Transaction
     open suspend fun updateDictionaryOrders(orderedIds: List<Int>) {

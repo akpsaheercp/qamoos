@@ -15,14 +15,17 @@ import okhttp3.Request
 import okhttp3.dnsoverhttps.DnsOverHttps
 import org.json.JSONArray
 import java.io.File
+import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
 import java.net.InetAddress
+import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import kotlin.text.Charsets
 
 class DictionaryManager(context: Context) {
     private val TAG = "DictionaryManager"
-    private val appContext = context.applicationContext
+    val appContext = context.applicationContext
     
     private val bootstrapClient = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
@@ -89,7 +92,6 @@ class DictionaryManager(context: Context) {
 
     private val compositeDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
-            // Try DoH providers in sequence
             val providers = listOf(
                 "Google" to googleDns,
                 "Cloudflare" to cloudflareDns,
@@ -109,7 +111,6 @@ class DictionaryManager(context: Context) {
                 }
             }
             
-            // Try System DNS
             try {
                 val results = Dns.SYSTEM.lookup(hostname)
                 if (results.isNotEmpty()) return results
@@ -117,7 +118,6 @@ class DictionaryManager(context: Context) {
                 Log.w(TAG, "System DNS failed for $hostname, trying static fallback")
             }
 
-            // Absolute last resort: Static Mapping
             val staticIps = staticDnsMapping[hostname]
             if (staticIps != null) {
                 Log.i(TAG, "Using static fallback IPs for $hostname: $staticIps")
@@ -149,6 +149,8 @@ class DictionaryManager(context: Context) {
     private val _downloadingTables = MutableStateFlow<Set<String>>(emptySet())
     val downloadingTables: StateFlow<Set<String>> = _downloadingTables
 
+    private var cachedChecksums: Map<String, String>? = null
+
     private fun getDictDir(): File {
         val dbDir = appContext.getDatabasePath("dummy_db").parentFile ?: File(appContext.applicationInfo.dataDir, "databases")
         if (!dbDir.exists()) dbDir.mkdirs()
@@ -160,12 +162,76 @@ class DictionaryManager(context: Context) {
     fun isDownloaded(tableName: String): Boolean {
         val fileName = "${tableName.lowercase()}.db"
         val file = File(getDictDir(), fileName)
-        return file.exists() && file.length() > 1024
+        return file.exists() && file.length() > 1024 && isValidSQLiteFile(file)
+    }
+
+    private fun isValidSQLiteFile(file: File): Boolean {
+        if (!file.exists() || file.length() < 16) return false
+        return try {
+            FileInputStream(file).use { input ->
+                val header = ByteArray(16)
+                if (input.read(header) != 16) return false
+                val expected = "SQLite format 3\u0000".toByteArray(Charsets.US_ASCII)
+                header.contentEquals(expected)
+            }
+        } catch (e: Exception) {
+            false
+        }
     }
 
     fun deleteDictionary(tableName: String): Boolean {
         val file = File(getDictDir(), "${tableName.lowercase()}.db")
         return if (file.exists()) file.delete() else false
+    }
+
+    private suspend fun fetchChecksums(): Map<String, String> = withContext(Dispatchers.IO) {
+        cachedChecksums?.let { return@withContext it }
+        
+        val urls = listOf(
+            "${baseUrl}checksums.txt",
+            "https://ghproxy.com/${baseUrl}checksums.txt"
+        )
+
+        for (url in urls) {
+            try {
+                val request = Request.Builder()
+                    .url(url)
+                    .header("User-Agent", userAgent)
+                    .build()
+                
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@use
+                    val body = response.body?.string() ?: return@use
+                    val map = body.lines()
+                        .filter { it.contains("  ") }
+                        .associate { 
+                            val parts = it.split("  ")
+                            val hash = parts[0].trim().lowercase()
+                            val name = parts[1].trim().lowercase()
+                            name to hash
+                        }
+                    if (map.isNotEmpty()) {
+                        cachedChecksums = map
+                        return@withContext map
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to fetch checksums from $url: ${e.message}")
+            }
+        }
+        emptyMap()
+    }
+
+    private fun calculateSHA256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        FileInputStream(file).use { input ->
+            val buffer = ByteArray(8192)
+            var bytesRead: Int
+            while (input.read(buffer).also { bytesRead = it } != -1) {
+                digest.update(buffer, 0, bytesRead)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
     suspend fun downloadDictionary(tableName: String, retryCount: Int = 3): Unit = withContext(Dispatchers.IO) {
@@ -177,7 +243,8 @@ class DictionaryManager(context: Context) {
         
         Log.i(TAG, "Attempting to download: $tableName (Attempt: ${4 - retryCount})")
 
-        val downloadedBytes = if (tempFile.exists()) tempFile.length() else 0L
+        // Always clear partial data before starting a new download attempt
+        if (tempFile.exists()) tempFile.delete()
         
         val urls = listOf(
             "$baseUrl$fileName",
@@ -189,12 +256,7 @@ class DictionaryManager(context: Context) {
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", userAgent)
-                .apply {
-                    if (downloadedBytes > 0) {
-                        addHeader("Range", "bytes=$downloadedBytes-")
-                    }
-                }
-                .build()
+                .build() // resumer removed
             
             val call = client.newCall(request)
             activeCalls[tableName] = call
@@ -205,31 +267,18 @@ class DictionaryManager(context: Context) {
                 val response = call.execute()
                 Log.i(TAG, "Response for $tableName from ${url.take(30)}...: ${response.code}")
                 
-                if (response.code == 416) {
-                    Log.w(TAG, "Range not satisfiable, deleting temp file for $tableName")
-                    response.close()
-                    tempFile.delete()
-                    return@withContext downloadDictionary(tableName, retryCount)
-                }
-
-                if (!response.isSuccessful && response.code != 206) {
+                if (!response.isSuccessful) {
                     throw IOException("Server returned ${response.code} for $tableName")
                 }
 
                 val body = response.body ?: throw IOException("Response body is null")
-                val contentLength = body.contentLength()
-                val totalBytes = if (response.code == 206) {
-                    val contentRange = response.header("Content-Range")
-                    contentRange?.substringAfterLast("/")?.toLongOrNull() ?: (contentLength + downloadedBytes)
-                } else {
-                    contentLength
-                }
+                val totalBytes = body.contentLength()
                 
                 body.byteStream().use { input ->
-                    FileOutputStream(tempFile, response.code == 206).use { output ->
+                    FileOutputStream(tempFile, false).use { output ->
                         val buffer = ByteArray(8192)
                         var bytesRead: Int
-                        var totalRead = downloadedBytes
+                        var totalRead = 0L
                         while (input.read(buffer).also { bytesRead = it } != -1) {
                             output.write(buffer, 0, bytesRead)
                             totalRead += bytesRead
@@ -242,13 +291,44 @@ class DictionaryManager(context: Context) {
                 }
 
                 if (tempFile.exists()) {
+                    // Pre-verification: Check if it's even a SQLite file
+                    _downloadProgress.value = _downloadProgress.value + (tableName to -1f) // Signal verification
+                    if (!isValidSQLiteFile(tempFile)) {
+                        Log.e(TAG, "Downloaded file for $tableName is not a valid SQLite database!")
+                        tempFile.delete()
+                        throw IOException("Verification failed: $tableName is not a valid SQLite database")
+                    }
+
+                    // Hash Verification
+                    Log.i(TAG, "Verifying integrity of $tableName...")
+                    val checksums = fetchChecksums()
+                    val expectedHash = checksums[fileName]
+                    
+                    if (expectedHash != null) {
+                        val actualHash = calculateSHA256(tempFile)
+                        if (actualHash != expectedHash) {
+                            Log.e(TAG, "Hash mismatch for $tableName! Expected: $expectedHash, Actual: $actualHash")
+                            tempFile.delete()
+                            throw IOException("Verification failed: Hash mismatch for $tableName")
+                        }
+                        Log.i(TAG, "Hash verification successful for $tableName")
+                    } else {
+                        Log.w(TAG, "No checksum found for $tableName, performing size check...")
+                        if (tempFile.length() < 1000) {
+                            tempFile.delete()
+                            throw IOException("Verification failed: File too small for $tableName")
+                        }
+                    }
+
                     if (localFile.exists()) localFile.delete()
                     tempFile.renameTo(localFile)
-                    Log.i(TAG, "Successfully saved $tableName from mirror: ${url.take(30)}...")
+                    Log.i(TAG, "Successfully saved $tableName")
                     return@withContext
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Download failed for $tableName from ${url.take(30)}...: ${e.message}")
+                Log.e(TAG, "Download failed for $tableName: ${e.message}")
+                if (tempFile.exists()) tempFile.delete() // Clear partially downloaded data
+                
                 lastException = e
                 if (call.isCanceled()) {
                     Log.i(TAG, "Download canceled for $tableName")
@@ -262,12 +342,11 @@ class DictionaryManager(context: Context) {
             }
         }
 
-        if (retryCount > 0 && lastException is IOException) {
-            Log.w(TAG, "All URLs failed for $tableName, retrying in 2s... ($retryCount left)")
+        if (retryCount > 0 && lastException is IOException && !lastException.message!!.contains("Verification failed")) {
+            Log.w(TAG, "Retrying download for $tableName ($retryCount left)")
             delay(2000)
             return@withContext downloadDictionary(tableName, retryCount - 1)
         } else {
-            Log.e(TAG, "Final download error for $tableName: ${lastException?.message}")
             throw lastException ?: IOException("Download failed for $tableName")
         }
     }
@@ -275,6 +354,8 @@ class DictionaryManager(context: Context) {
     fun pauseDownload(tableName: String) {
         activeCalls[tableName]?.cancel()
         _isPaused.value = _isPaused.value + (tableName to true)
+        // Note: Data will be cleared because resume is not supported anymore as per user request
+        File(getDictDir(), "${tableName.lowercase()}.db.tmp").delete()
     }
 
     fun resumeDownload(tableName: String) {
@@ -293,7 +374,7 @@ class DictionaryManager(context: Context) {
 
     fun getDictionaryPath(tableName: String): String? {
         val file = File(getDictDir(), "${tableName.lowercase()}.db")
-        return if (file.exists() && file.length() > 1024) file.absolutePath else null
+        return if (file.exists() && file.length() > 1024 && isValidSQLiteFile(file)) file.absolutePath else null
     }
 
     suspend fun getOnlineDictionaryNames(): List<String> = withContext(Dispatchers.IO) {
@@ -310,21 +391,17 @@ class DictionaryManager(context: Context) {
                 .build()
             try {
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) {
-                        Log.e(TAG, "Failed to get manifest from $url: ${response.code}")
-                        continue
-                    }
-                    val body = response.body?.string() ?: continue
+                    if (!response.isSuccessful) return@use
+                    val body = response.body?.string() ?: return@use
                     val jsonArray = JSONArray(body)
                     val list = mutableListOf<String>()
                     for (i in 0 until jsonArray.length()) {
                         list.add(jsonArray.getString(i))
                     }
-                    Log.i(TAG, "Successfully fetched manifest from $url")
                     return@withContext list
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Exception while getting manifest from $url: ${e.message}")
+                Log.e(TAG, "Failed to get manifest from $url")
             }
         }
         emptyList()

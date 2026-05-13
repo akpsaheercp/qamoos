@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.qamoos.data.ArabicDao
 import com.example.qamoos.data.DictionaryInfo
 import com.example.qamoos.data.UserPreferences
+import com.example.qamoos.utils.DictionaryDownloadService
 import com.example.qamoos.utils.DictionaryManager
 import com.example.qamoos.utils.DictionaryUtils
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,9 +23,9 @@ class SettingsViewModel(
     private val dictionaryManager: DictionaryManager
 ) : ViewModel() {
 
-    val downloadProgress = dictionaryManager.downloadProgress
+    val downloadProgress = DictionaryDownloadService.downloadProgress
     val isPaused = dictionaryManager.isPaused
-    val downloadingTables = dictionaryManager.downloadingTables
+    val downloadingTables = DictionaryDownloadService.downloadingTables
     private val _onlineDictNames = MutableStateFlow<List<String>>(emptyList())
     
     private val _startingDownloads = MutableStateFlow<Set<String>>(emptySet())
@@ -87,28 +88,7 @@ class SettingsViewModel(
     fun downloadDictionary(tableName: String?) {
         Log.d("SettingsViewModel", "downloadDictionary requested for: $tableName")
         tableName?.let { table ->
-            val downloadedCount = dictionaries.value.count { dict -> dictionaryManager.isDownloaded(dict.tableName ?: "") }
-            if (downloadedCount >= 10) {
-                _errorMessage.value = "Downloading more than 10 dictionaries will lead to error. If you want to use more than 10 dictionaries, use the offline version."
-                return
-            }
-            
-            _startingDownloads.value = _startingDownloads.value + table
-            val nativeName = DictionaryUtils.getNativeName(table, table)
-            viewModelScope.launch {
-                try {
-                    _errorMessage.value = null
-                    Log.i("SettingsViewModel", "Starting download job for: $table")
-                    dictionaryManager.downloadDictionary(table)
-                    Log.i("SettingsViewModel", "Download job completed for: $table")
-                    userPreferences.toggleDictionary(table, true)
-                } catch (e: Exception) {
-                    Log.e("SettingsViewModel", "Error in download job for: $table", e)
-                    _errorMessage.value = "Error downloading $nativeName: ${e.message ?: "Unknown error"}"
-                } finally {
-                    _startingDownloads.value = _startingDownloads.value - table
-                }
-            }
+            DictionaryDownloadService.startDownload(dictionaryManager.appContext, table)
         } ?: Log.e("SettingsViewModel", "tableName is null, cannot download")
     }
 
@@ -184,33 +164,12 @@ class SettingsViewModel(
 
     fun downloadAllDictionaries() {
         viewModelScope.launch {
-            var currentDownloaded = dictionaries.value.count { dict -> dictionaryManager.isDownloaded(dict.tableName ?: "") }
-            
             dictionaries.value.forEach { dict ->
                 val tableName = dict.tableName ?: return@forEach
                 if (!dictionaryManager.isDownloaded(tableName) && 
-                    !dictionaryManager.downloadProgress.value.containsKey(tableName)) {
+                    !DictionaryDownloadService.downloadProgress.value.containsKey(tableName)) {
                     
-                    if (currentDownloaded >= 10) {
-                        _errorMessage.value = "Downloading more than 10 dictionaries will lead to error. If you want to use more than 10 dictionaries, use the offline version."
-                        return@launch
-                    }
-                    
-                    _startingDownloads.value = _startingDownloads.value + tableName
-                    val nativeName = DictionaryUtils.getNativeName(tableName, tableName)
-                    currentDownloaded++
-                    launch {
-                        try {
-                            _errorMessage.value = null
-                            dictionaryManager.downloadDictionary(tableName)
-                            userPreferences.toggleDictionary(tableName, true)
-                        } catch (e: Exception) {
-                            Log.e("SettingsViewModel", "Error in download all for: $tableName", e)
-                            _errorMessage.value = "Error downloading $nativeName: ${e.message ?: "Unknown error"}"
-                        } finally {
-                            _startingDownloads.value = _startingDownloads.value - tableName
-                        }
-                    }
+                    DictionaryDownloadService.startDownload(dictionaryManager.appContext, tableName)
                 }
             }
         }

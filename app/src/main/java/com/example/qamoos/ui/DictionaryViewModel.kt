@@ -1,10 +1,9 @@
 package com.example.qamoos.ui
 
+import android.database.sqlite.SQLiteDatabase
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import androidx.sqlite.db.SimpleSQLiteQuery
-import androidx.sqlite.db.SupportSQLiteQuery
 import com.example.qamoos.data.ArabicDao
 import com.example.qamoos.data.DictionaryInfo
 import com.example.qamoos.data.UnifiedEntry
@@ -20,6 +19,27 @@ class DictionaryViewModel(
     private val userPreferences: com.example.qamoos.data.UserPreferences,
     private val dictionaryManager: DictionaryManager
 ) : ViewModel() {
+
+    private val dbCache = mutableMapOf<String, SQLiteDatabase>()
+
+    override fun onCleared() {
+        super.onCleared()
+        dbCache.values.forEach { 
+            try { it.close() } catch (_: Exception) {}
+        }
+        dbCache.clear()
+    }
+
+    private fun getDatabase(path: String): SQLiteDatabase? {
+        return try {
+            dbCache.getOrPut(path) {
+                SQLiteDatabase.openDatabase(path, null, SQLiteDatabase.OPEN_READONLY)
+            }
+        } catch (e: Exception) {
+            Log.e("DictionaryViewModel", "Failed to open database at $path: ${e.message}")
+            null
+        }
+    }
 
     val isFirstRun: StateFlow<Boolean> = userPreferences.isFirstRun
         .stateIn(
@@ -93,18 +113,18 @@ class DictionaryViewModel(
             flow {
                 val allResults = mutableListOf<UnifiedEntry>()
                 
-                // Search each dictionary individually to ensure that a failure in one 
-                // (e.g., due to different table structure) doesn't prevent results from others.
+                // Search each dictionary independently using direct SQLite connections.
+                // This bypasses the SQLite ATTACH limit (max 10) and avoids connection locking issues.
                 dicts.forEach { dict ->
                     val tableName = dict.tableName ?: return@forEach
+                    val displayName = dict.displayName ?: return@forEach
                     val path = dictionaryManager.getDictionaryPath(tableName) ?: return@forEach
                     
-                    val attachments = listOf(Pair(path, tableName))
-                    val sqliteQuery = buildMultiTableQuery(listOf(dict), normalizedQuery, exact)
+                    val db = getDatabase(path) ?: return@forEach
                     
                     try {
-                        val result = arabicDao.searchWithAttachments(sqliteQuery, attachments)
-                        allResults.addAll(result)
+                        val results = queryExternalDictionary(db, tableName, displayName, normalizedQuery, exact, dict.displayOrder ?: 999)
+                        allResults.addAll(results)
                     } catch (e: Exception) {
                         Log.e("DictionaryViewModel", "Search failed for $tableName: ${e.message}")
                     }
@@ -131,35 +151,40 @@ class DictionaryViewModel(
         initialValue = emptyList()
     )
 
-    private fun buildMultiTableQuery(dicts: List<DictionaryInfo>, query: String, exact: Boolean): SimpleSQLiteQuery {
-        val validDicts = dicts.filter { it.tableName != null && it.displayName != null }
-        if (validDicts.isEmpty()) return SimpleSQLiteQuery("SELECT 1 WHERE 0")
-        
+    private fun queryExternalDictionary(db: SQLiteDatabase, tableName: String, displayName: String, query: String, exact: Boolean, displayOrder: Int): List<UnifiedEntry> {
+        val results = mutableListOf<UnifiedEntry>()
         val dbQuery = if (exact) query else "%$query%" 
         val operator = if (exact) "=" else "LIKE"
         
-        val selectStatements = validDicts.map { dict ->
-            val tableName = dict.tableName!!
-            val displayName = dict.displayName!!
-            val displayOrder = if (tableName == "taj") -1 else (dict.displayOrder ?: 0)
-            
-            val (idCol, wordCol, meaningCol, searchCol) = when (tableName.lowercase()) {
-                "arabic" -> Quadruple("No", "word", "'[[MALAYALAM]]' || IFNULL(M_Malayalam, '') || '[[ENGLISH]]' || IFNULL(M_English, '')", "word_no_harakah")
-                "english" -> Quadruple("No", "word", "'[[ARABIC]]' || IFNULL(M_arabic, '') || '[[MALAYALAM]]' || IFNULL(M_malayalam, '')", "word")
-                "malayalam" -> Quadruple("No", "word", "'[[ARABIC]]' || IFNULL(M_Arabic, '') || '[[ENGLISH]]' || IFNULL(M_English, '')", "word")
-                "irab" -> Quadruple("id", "title", "'[[SUBHEADING]]' || IFNULL(konten, '') || '[[MEANING]]' || IFNULL(text, '')", "title")
-                "maany", "afaal", "frooq", "maany_dict" -> Quadruple("id", "word", "meaning", "word_no_harakah")
-                else -> Quadruple("_id", "word", "meaning", "word_no_harakah")
-            }
-
-            // Use subqueries to allow per-table LIMIT when used with UNION ALL
-            "SELECT * FROM (SELECT $idCol as id, $wordCol as word, $searchCol as wordNoHarakah, $meaningCol as meaning, '${displayName.replace("'", "''")}' as dictionaryName, $displayOrder as displayOrder FROM \"$tableName\".$tableName WHERE $searchCol $operator ? LIMIT 50)"
+        val (idCol, wordCol, meaningCol, searchCol) = when (tableName.lowercase()) {
+            "arabic" -> Quadruple("No", "word", "'[[MALAYALAM]]' || IFNULL(M_Malayalam, '') || '[[ENGLISH]]' || IFNULL(M_English, '')", "word_no_harakah")
+            "english" -> Quadruple("No", "word", "'[[ARABIC]]' || IFNULL(M_arabic, '') || '[[MALAYALAM]]' || IFNULL(M_malayalam, '')", "word")
+            "malayalam" -> Quadruple("No", "word", "'[[ARABIC]]' || IFNULL(M_Arabic, '') || '[[ENGLISH]]' || IFNULL(M_English, '')", "word")
+            "irab" -> Quadruple("id", "title", "'[[SUBHEADING]]' || IFNULL(konten, '') || '[[MEANING]]' || IFNULL(text, '')", "title")
+            "maany", "afaal", "frooq", "maany_dict" -> Quadruple("id", "word", "meaning", "word_no_harakah")
+            else -> Quadruple("_id", "word", "meaning", "word_no_harakah")
         }
 
-        val finalQuery = selectStatements.joinToString(" UNION ALL ")
-        val args = Array(selectStatements.size) { dbQuery }
-
-        return SimpleSQLiteQuery(finalQuery, args)
+        val sql = "SELECT $idCol as id, $wordCol as word, $searchCol as wordNoHarakah, $meaningCol as meaning FROM \"$tableName\" WHERE $searchCol $operator ? LIMIT 50"
+        
+        db.rawQuery(sql, arrayOf(dbQuery)).use { cursor ->
+            val idIdx = cursor.getColumnIndex("id")
+            val wordIdx = cursor.getColumnIndex("word")
+            val searchIdx = cursor.getColumnIndex("wordNoHarakah")
+            val meaningIdx = cursor.getColumnIndex("meaning")
+            
+            while (cursor.moveToNext()) {
+                results.add(UnifiedEntry(
+                    id = if (idIdx != -1) cursor.getInt(idIdx) else null,
+                    word = if (wordIdx != -1) cursor.getString(wordIdx) else null,
+                    wordNoHarakah = if (searchIdx != -1) cursor.getString(searchIdx) else null,
+                    meaning = if (meaningIdx != -1) cursor.getString(meaningIdx) else null,
+                    dictionaryName = displayName,
+                    displayOrder = if (tableName == "taj") -1 else displayOrder
+                ))
+            }
+        }
+        return results
     }
 
     private fun normalizeArabic(text: String): String {

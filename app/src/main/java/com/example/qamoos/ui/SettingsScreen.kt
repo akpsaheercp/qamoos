@@ -23,6 +23,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -43,6 +44,8 @@ import com.example.qamoos.ui.theme.ScheherazadeNew
 import com.example.qamoos.utils.DictionaryMetadata
 import com.example.qamoos.utils.LanguageUtils
 import kotlinx.coroutines.launch
+import sh.calvin.reorderable.ReorderableItem
+import sh.calvin.reorderable.rememberReorderableLazyListState
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -60,16 +63,12 @@ fun SettingsScreen(
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isFirstRun by viewModel.isFirstRun.collectAsState()
     
-    var isReorderMode by remember { mutableStateOf(false) }
-    
     // Local list for drag-and-drop to ensure smooth UI updates
     var localDictionaries by remember { mutableStateOf(dictionariesState) }
     
-    // Update local list when database list changes, but not during reorder mode
+    // Update local list when database list changes, but not during reorder
     LaunchedEffect(dictionariesState) {
-        if (!isReorderMode) {
-            localDictionaries = dictionariesState
-        }
+        localDictionaries = dictionariesState
     }
 
     val snackbarHostState = remember { SnackbarHostState() }
@@ -113,21 +112,8 @@ fun SettingsScreen(
                     }
                 },
                 actions = {
-                    if (localDictionaries.isNotEmpty()) {
-                        IconButton(onClick = { 
-                            if (isReorderMode) {
-                                // Save changes when exiting reorder mode
-                                viewModel.updateDictionaryOrders(localDictionaries)
-                            }
-                            isReorderMode = !isReorderMode 
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }) {
-                            Icon(
-                                if (isReorderMode) Icons.Default.Done else Icons.Default.SwapVert, 
-                                contentDescription = "Reorder",
-                                tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    IconButton(onClick = { viewModel.downloadAllDictionaries() }) {
+                        Icon(Icons.Default.Download, contentDescription = "Download All")
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -139,6 +125,13 @@ fun SettingsScreen(
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
         val listState = rememberLazyListState()
+        val reorderableState = rememberReorderableLazyListState(listState) { from, to ->
+            localDictionaries = localDictionaries.toMutableList().apply {
+                add(to.index - 4, removeAt(from.index - 4)) // Adjusting for headers
+            }
+            viewModel.updateDictionaryOrders(localDictionaries)
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        }
         
         LazyColumn(
             state = listState,
@@ -148,75 +141,54 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             // --- Library Tools ---
-            if (!isReorderMode) {
-                item { SettingsSectionHeader(title = "Tools") }
-                item {
-                    SettingsGroup {
-                        SettingsClickableItem(
-                            title = stringResource(R.string.history),
-                            description = "Previously viewed meanings",
-                            icon = Icons.Default.History,
-                            onClick = onNavigateToHistory
-                        )
-                        SettingsClickableItem(
-                            title = stringResource(R.string.favorites),
-                            description = "Saved words and meanings",
-                            icon = Icons.Default.Favorite,
-                            onClick = onNavigateToFavorites
-                        )
-                    }
+            item { SettingsSectionHeader(title = "Tools") }
+            item {
+                SettingsGroup {
+                    SettingsClickableItem(
+                        title = stringResource(R.string.history),
+                        description = "Previously viewed meanings",
+                        icon = Icons.Default.History,
+                        onClick = onNavigateToHistory
+                    )
+                    SettingsClickableItem(
+                        title = stringResource(R.string.favorites),
+                        description = "Saved words and meanings",
+                        icon = Icons.Default.Favorite,
+                        onClick = onNavigateToFavorites
+                    )
                 }
             }
 
             // --- Dictionary Management ---
             item { 
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(end = 16.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    SettingsSectionHeader(title = if (isReorderMode) "Prioritize Dictionaries" else stringResource(R.string.manage_dictionaries))
-                    if (!isReorderMode) {
-                        TextButton(onClick = { viewModel.downloadAllDictionaries() }) {
-                            Icon(Icons.Default.DownloadForOffline, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Download All", fontFamily = Manjari, fontSize = 12.sp)
-                        }
-                    }
-                }
+                SettingsSectionHeader(title = stringResource(R.string.manage_dictionaries))
             }
             
             item {
-                AnimatedVisibility(
-                    visible = true,
-                    enter = fadeIn() + expandVertically(),
-                    exit = fadeOut() + shrinkVertically()
+                Card(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.2f)
+                    )
                 ) {
-                    Card(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = if (isReorderMode) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
-                        )
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                if (isReorderMode) Icons.Default.SwapVert else Icons.Default.Info, 
-                                contentDescription = null, 
-                                tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                text = if (isReorderMode) "Drag the handles to prioritize dictionaries. Top dictionaries appear first in search results." else "Enable dictionaries to include them in search results. You can download up to 10 dictionaries.",
-                                style = MaterialTheme.typography.bodySmall,
-                                fontFamily = Manjari,
-                                color = if (isReorderMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
-                            )
-                        }
+                        Icon(
+                            Icons.Default.TouchApp, 
+                            contentDescription = null, 
+                            tint = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Text(
+                            text = "Long press and drag to reorder. Enable dictionaries to include them in search results.",
+                            style = MaterialTheme.typography.bodySmall,
+                            fontFamily = Manjari,
+                            color = MaterialTheme.colorScheme.onSecondaryContainer
+                        )
                     }
                 }
             }
@@ -225,132 +197,121 @@ fun SettingsScreen(
                 items = localDictionaries,
                 key = { _, dict -> dict.tableName ?: dict.hashCode() }
             ) { index, dict ->
-                DictionarySettingsItem(
-                    dict = dict,
-                    viewModel = viewModel,
-                    isReorderMode = isReorderMode,
-                    onMoveUp = {
-                        if (index > 0) {
-                            val newList = localDictionaries.toMutableList()
-                            val item = newList.removeAt(index)
-                            newList.add(index - 1, item)
-                            localDictionaries = newList
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    },
-                    onMoveDown = {
-                        if (index < localDictionaries.size - 1) {
-                            val newList = localDictionaries.toMutableList()
-                            val item = newList.removeAt(index)
-                            newList.add(index + 1, item)
-                            localDictionaries = newList
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        }
-                    },
-                    modifier = Modifier.animateItem(
-                        fadeInSpec = null,
-                        fadeOutSpec = null,
-                        placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
-                    ),
-                    onDownloadClick = { viewModel.downloadDictionary(dict.tableName) },
-                    onPauseClick = { viewModel.pauseDownload(dict.tableName) },
-                    onResumeClick = { viewModel.resumeDownload(dict.tableName) },
-                    onCancelClick = { viewModel.cancelDownload(dict.tableName) },
-                    onDeleteClick = { viewModel.deleteDictionary(dict) },
-                    onToggle = { viewModel.toggleDictionary(dict) },
-                    onClick = { dict.id?.let { onDictionaryClick(it) } }
-                )
+                ReorderableItem(reorderableState, key = dict.tableName ?: dict.hashCode()) { isDragging ->
+                    val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp)
+                    
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .shadow(elevation)
+                            .background(if (isDragging) MaterialTheme.colorScheme.surfaceVariant else Color.Transparent)
+                    ) {
+                        DictionarySettingsItem(
+                            dict = dict,
+                            viewModel = viewModel,
+                            isDragging = isDragging,
+                            modifier = Modifier.longPressDraggableHandle(
+                                onDragStarted = { haptic.performHapticFeedback(HapticFeedbackType.LongPress) }
+                            ),
+                            onDownloadClick = { viewModel.downloadDictionary(dict.tableName) },
+                            onPauseClick = { viewModel.pauseDownload(dict.tableName) },
+                            onResumeClick = { viewModel.resumeDownload(dict.tableName) },
+                            onCancelClick = { viewModel.cancelDownload(dict.tableName) },
+                            onDeleteClick = { viewModel.deleteDictionary(dict) },
+                            onToggle = { viewModel.toggleDictionary(dict) },
+                            onClick = { dict.id?.let { onDictionaryClick(it) } }
+                        )
+                    }
+                }
             }
 
             // --- Appearance Section ---
-            if (!isReorderMode) {
-                item { SettingsSectionHeader(title = stringResource(R.string.appearance)) }
-                item {
-                    SettingsGroup {
-                        SettingsSelectionItem(
-                            title = stringResource(R.string.theme),
-                            icon = Icons.Default.Palette,
-                            options = listOf("light", "dark", "system"),
-                            selectedOption = darkThemeConfig,
-                            onOptionSelected = { viewModel.updateTheme(it) },
-                            optionLabels = mapOf(
-                                "light" to stringResource(R.string.light),
-                                "dark" to stringResource(R.string.dark),
-                                "system" to stringResource(R.string.system)
-                            )
+            item { SettingsSectionHeader(title = stringResource(R.string.appearance)) }
+            item {
+                SettingsGroup {
+                    SettingsSelectionItem(
+                        title = stringResource(R.string.theme),
+                        icon = Icons.Default.Palette,
+                        options = listOf("light", "dark", "system"),
+                        selectedOption = darkThemeConfig,
+                        onOptionSelected = { viewModel.updateTheme(it) },
+                        optionLabels = mapOf(
+                            "light" to stringResource(R.string.light),
+                            "dark" to stringResource(R.string.dark),
+                            "system" to stringResource(R.string.system)
                         )
-                        SettingsSelectionItem(
-                            title = stringResource(R.string.language),
-                            icon = Icons.Default.Language,
-                            options = listOf("en", "ml", "ar"),
-                            selectedOption = appLanguage ?: "en",
-                            onOptionSelected = { viewModel.updateLanguage(it) },
-                            optionLabels = mapOf(
-                                "en" to "English",
-                                "ml" to "മലയാളം",
-                                "ar" to "العربية"
-                            )
+                    )
+                    SettingsSelectionItem(
+                        title = stringResource(R.string.language),
+                        icon = Icons.Default.Language,
+                        options = listOf("en", "ml", "ar"),
+                        selectedOption = appLanguage ?: "en",
+                        onOptionSelected = { viewModel.updateLanguage(it) },
+                        optionLabels = mapOf(
+                            "en" to "English",
+                            "ml" to "മലയാളം",
+                            "ar" to "العربية"
                         )
-                        SettingsSliderItem(
-                            title = stringResource(R.string.font_size),
-                            icon = Icons.Default.TextFields,
-                            value = fontSizeMultiplier,
-                            onValueChange = { viewModel.updateFontSize(it) },
-                            range = 0.8f..1.5f,
-                            steps = 7,
-                            previewText = stringResource(R.string.preview_text)
-                        )
-                    }
-                }
-
-                // --- Community & Support ---
-                item { SettingsSectionHeader(title = "Community & Support") }
-                item {
-                    SettingsGroup {
-                        val uriHandler = LocalUriHandler.current
-                        SettingsClickableItem(
-                            title = "Telegram Community",
-                            description = "Join for discussions and updates",
-                            icon = Icons.AutoMirrored.Filled.Message,
-                            onClick = { uriHandler.openUri("https://t.me/qamoos") }
-                        )
-                        SettingsClickableItem(
-                            title = "Contact Developer",
-                            description = "WhatsApp or Telegram for feedback",
-                            icon = Icons.Default.Person,
-                            onClick = { uriHandler.openUri("https://wa.me/917902520097") }
-                        )
-                    }
-                }
-
-                // --- Support the Project (Donation) ---
-                item {
-                    DonationCard(
-                        onDonateClick = {
-                            val upiUri = Uri.parse("upi://pay?pa=akpsaheer@okhdfcbank&pn=QamoosApp&cu=INR")
-                            val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
-                            val chooser = Intent.createChooser(upiIntent, "Donate via UPI")
-                            try {
-                                context.startActivity(chooser)
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
-                            }
-                        }
+                    )
+                    SettingsSliderItem(
+                        title = stringResource(R.string.font_size),
+                        icon = Icons.Default.TextFields,
+                        value = fontSizeMultiplier,
+                        onValueChange = { viewModel.updateFontSize(it) },
+                        range = 0.8f..1.5f,
+                        steps = 7,
+                        previewText = stringResource(R.string.preview_text)
                     )
                 }
+            }
 
-                item {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "Version 1.0.0",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            fontFamily = Manjari
-                        )
+            // --- Community & Support ---
+            item { SettingsSectionHeader(title = "Community & Support") }
+            item {
+                SettingsGroup {
+                    val uriHandler = LocalUriHandler.current
+                    SettingsClickableItem(
+                        title = "Telegram Community",
+                        description = "Join for discussions and updates",
+                        icon = Icons.AutoMirrored.Filled.Message,
+                        onClick = { uriHandler.openUri("https://t.me/qamoos") }
+                    )
+                    SettingsClickableItem(
+                        title = "Contact Developer",
+                        description = "WhatsApp or Telegram for feedback",
+                        icon = Icons.Default.Person,
+                        onClick = { uriHandler.openUri("https://wa.me/917902520097") }
+                    )
+                }
+            }
+
+            // --- Support the Project (Donation) ---
+            item {
+                DonationCard(
+                    onDonateClick = {
+                        val upiUri = Uri.parse("upi://pay?pa=akpsaheer@okhdfcbank&pn=QamoosApp&cu=INR")
+                        val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
+                        val chooser = Intent.createChooser(upiIntent, "Donate via UPI")
+                        try {
+                            context.startActivity(chooser)
+                        } catch (e: Exception) {
+                            Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
+                        }
                     }
+                )
+            }
+
+            item {
+                Box(
+                    modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Version 1.0.0",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                        fontFamily = Manjari
+                    )
                 }
             }
         }
@@ -361,9 +322,7 @@ fun SettingsScreen(
 fun DictionarySettingsItem(
     dict: DictionaryInfo,
     viewModel: SettingsViewModel,
-    isReorderMode: Boolean = false,
-    onMoveUp: () -> Unit = {},
-    onMoveDown: () -> Unit = {},
+    isDragging: Boolean = false,
     modifier: Modifier = Modifier,
     onDownloadClick: () -> Unit,
     onPauseClick: () -> Unit,
@@ -387,188 +346,172 @@ fun DictionarySettingsItem(
     
     val showProgress = (isStarting || isDownloading || downloadProgress != null) && !isDownloaded
     
-    ListItem(
-        modifier = modifier
+    Card(
+        modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
-        headlineContent = {
-            val isArabicName = LanguageUtils.isArabic(dict.displayName)
-            Text(
-                text = dict.displayName ?: "Unknown",
-                fontFamily = if (isArabicName) com.example.qamoos.ui.theme.ScheherazadeNew else Manjari,
-                fontWeight = FontWeight.Bold,
-                fontSize = if (isArabicName) 18.sp else 16.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        supportingContent = {
-            Column {
-                Text(
-                    text = when {
-                        isDownloaded -> "Installed"
-                        isStarting -> "Starting..."
-                        isDownloading && downloadProgress == null -> "Connecting..."
-                        downloadProgress != null -> if (isPaused) "Paused" else "Downloading ${downloadProgress.toInt()}%"
-                        else -> DictionaryMetadata.getSize(dict.tableName)
-                    },
-                    fontFamily = Manjari,
-                    fontSize = 12.sp,
-                    color = when {
-                        isDownloaded -> MaterialTheme.colorScheme.primary
-                        isStarting || isDownloading || downloadProgress != null -> MaterialTheme.colorScheme.tertiary
-                        else -> MaterialTheme.colorScheme.onSurfaceVariant
-                    }
-                )
-                
-                if (showProgress) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    if (downloadProgress != null) {
-                        LinearProgressIndicator(
-                            progress = { downloadProgress / 100f },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
-                            trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
-                        )
-                    } else {
-                        LinearProgressIndicator(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(6.dp)
-                                .clip(RoundedCornerShape(3.dp)),
-                            color = MaterialTheme.colorScheme.tertiary,
-                            trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
-                        )
-                    }
-                }
-            }
-        },
-        leadingContent = {
-            if (isReorderMode) {
-                Surface(
-                    modifier = Modifier.size(40.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                ) {
-                    Column(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.SpaceEvenly,
-                        horizontalAlignment = Alignment.CenterHorizontally
+            .padding(horizontal = 16.dp, vertical = 4.dp)
+            .then(modifier),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isDragging) 
+                MaterialTheme.colorScheme.surfaceVariant 
+            else 
+                MaterialTheme.colorScheme.surfaceColorAtElevation(1.dp)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 4.dp else 0.dp)
+    ) {
+        Column {
+            ListItem(
+                modifier = Modifier.clickable(onClick = onClick),
+                headlineContent = {
+                    val isArabicName = LanguageUtils.isArabic(dict.displayName)
+                    Text(
+                        text = dict.displayName ?: "Unknown",
+                        fontFamily = if (isArabicName) ScheherazadeNew else Manjari,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = if (isArabicName) 18.sp else 16.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                supportingContent = {
+                    Text(
+                        text = when {
+                            isDownloaded -> "Installed"
+                            isStarting -> "Starting..."
+                            isDownloading && downloadProgress == null -> "Connecting..."
+                            downloadProgress != null && downloadProgress < 0 -> "Verifying..."
+                            downloadProgress != null -> if (isPaused) "Paused" else "Downloading ${downloadProgress.toInt()}%"
+                            else -> DictionaryMetadata.getSize(dict.tableName)
+                        },
+                        fontFamily = Manjari,
+                        fontSize = 12.sp,
+                        color = when {
+                            isDownloaded -> MaterialTheme.colorScheme.secondary
+                            isStarting || isDownloading || downloadProgress != null -> MaterialTheme.colorScheme.tertiary
+                            else -> MaterialTheme.colorScheme.onSurfaceVariant
+                        }
+                    )
+                },
+                leadingContent = {
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(
+                                if (dict.isSelected == 1 && isDownloaded) 
+                                    MaterialTheme.colorScheme.primaryContainer 
+                                else 
+                                    MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
-                        IconButton(onClick = onMoveUp, modifier = Modifier.size(20.dp)) {
-                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                        }
-                        IconButton(onClick = onMoveDown, modifier = Modifier.size(20.dp)) {
-                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        Icon(
+                            imageVector = if (isDownloaded) Icons.Default.Book else Icons.Default.CloudDownload,
+                            contentDescription = null,
+                            tint = if (dict.isSelected == 1 && isDownloaded) 
+                                MaterialTheme.colorScheme.onPrimaryContainer 
+                            else 
+                                MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                },
+                trailingContent = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (isDownloaded) {
+                            var showDeleteDialog by remember { mutableStateOf(false) }
+                            
+                            if (showDeleteDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showDeleteDialog = false },
+                                    title = { Text("Delete Dictionary", fontFamily = Manjari) },
+                                    text = { Text("Are you sure you want to delete ${dict.displayName}?", fontFamily = Manjari) },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            onDeleteClick()
+                                            showDeleteDialog = false
+                                        }) {
+                                            Text("Delete", color = MaterialTheme.colorScheme.error, fontFamily = Manjari)
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showDeleteDialog = false }) {
+                                            Text("Cancel", fontFamily = Manjari)
+                                        }
+                                    }
+                                )
+                            }
+
+                            IconButton(onClick = { showDeleteDialog = true }) {
+                                Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
+                            }
+                            
+                            Switch(
+                                checked = dict.isSelected == 1,
+                                onCheckedChange = { 
+                                    onToggle()
+                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
+                                modifier = Modifier.scale(0.8f)
+                            )
+                        } else if (isStarting || isDownloading || downloadProgress != null) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (isStarting || (isDownloading && downloadProgress == null)) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(24.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.tertiary
+                                    )
+                                } else {
+                                    IconButton(onClick = if (isPaused) onResumeClick else onPauseClick) {
+                                        Icon(
+                                            if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.tertiary
+                                        )
+                                    }
+                                    IconButton(onClick = onCancelClick) {
+                                        Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
+                            }
+                        } else {
+                            IconButton(onClick = onDownloadClick) {
+                                Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
+                            }
                         }
                     }
-                }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (dict.isSelected == 1 && isDownloaded) 
-                                MaterialTheme.colorScheme.primaryContainer 
-                            else 
-                                MaterialTheme.colorScheme.surfaceVariant
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = if (isDownloaded) Icons.Default.Book else Icons.Default.CloudDownload,
-                        contentDescription = null,
-                        tint = if (dict.isSelected == 1 && isDownloaded) 
-                            MaterialTheme.colorScheme.onPrimaryContainer 
-                        else 
-                            MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp)
+                },
+                colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+            )
+            
+            if (showProgress) {
+                if (downloadProgress != null) {
+                    LinearProgressIndicator(
+                        progress = { downloadProgress / 100f },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .height(4.dp)
+                            .clip(CircleShape),
+                        color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
+                        trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+                    )
+                } else {
+                    LinearProgressIndicator(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .height(4.dp)
+                            .clip(CircleShape),
+                        color = MaterialTheme.colorScheme.tertiary,
+                        trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
                     )
                 }
             }
-        },
-        trailingContent = {
-            if (isReorderMode) {
-                Icon(
-                    Icons.Default.DragHandle, 
-                    contentDescription = "Reorder Handle", 
-                    tint = MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.size(28.dp)
-                )
-            } else {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (isDownloaded) {
-                        var showDeleteDialog by remember { mutableStateOf(false) }
-                        
-                        if (showDeleteDialog) {
-                            AlertDialog(
-                                onDismissRequest = { showDeleteDialog = false },
-                                title = { Text("Delete Dictionary", fontFamily = Manjari) },
-                                text = { Text("Are you sure you want to delete ${dict.displayName}?", fontFamily = Manjari) },
-                                confirmButton = {
-                                    TextButton(onClick = {
-                                        onDeleteClick()
-                                        showDeleteDialog = false
-                                    }) {
-                                        Text("Delete", color = MaterialTheme.colorScheme.error, fontFamily = Manjari)
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = { showDeleteDialog = false }) {
-                                        Text("Cancel", fontFamily = Manjari)
-                                    }
-                                }
-                            )
-                        }
-
-                        IconButton(onClick = { showDeleteDialog = true }) {
-                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error.copy(alpha = 0.6f))
-                        }
-                        
-                        Switch(
-                            checked = dict.isSelected == 1,
-                            onCheckedChange = { 
-                                onToggle()
-                                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            },
-                            modifier = Modifier.scale(0.8f)
-                        )
-                    } else if (isStarting || isDownloading || downloadProgress != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isStarting || (isDownloading && downloadProgress == null)) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.tertiary
-                                )
-                            } else {
-                                IconButton(onClick = if (isPaused) onResumeClick else onPauseClick) {
-                                    Icon(
-                                        if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.tertiary
-                                    )
-                                }
-                                IconButton(onClick = onCancelClick) {
-                                    Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                                }
-                            }
-                        }
-                    } else {
-                        IconButton(onClick = onDownloadClick) {
-                            Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
-                        }
-                    }
-                }
-            }
-        },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
+        }
+    }
 }
 
 @Composable
