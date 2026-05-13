@@ -83,6 +83,12 @@ class SettingsViewModel(
     fun downloadDictionary(tableName: String?) {
         Log.d("SettingsViewModel", "downloadDictionary requested for: $tableName")
         tableName?.let {
+            val downloadedCount = dictionaries.value.count { dict -> dictionaryManager.isDownloaded(dict.tableName ?: "") }
+            if (downloadedCount >= 10) {
+                _errorMessage.value = "Downloading more than 10 dictionaries will lead to error. If you want to use more than 10 dictionaries, use the offline version."
+                return
+            }
+            
             val nativeName = DictionaryUtils.getNativeName(it, it)
             viewModelScope.launch {
                 try {
@@ -171,11 +177,20 @@ class SettingsViewModel(
 
     fun downloadAllDictionaries() {
         viewModelScope.launch {
+            var currentDownloaded = dictionaries.value.count { dict -> dictionaryManager.isDownloaded(dict.tableName ?: "") }
+            
             dictionaries.value.forEach { dict ->
                 val tableName = dict.tableName ?: return@forEach
                 if (!dictionaryManager.isDownloaded(tableName) && 
                     !dictionaryManager.downloadProgress.value.containsKey(tableName)) {
+                    
+                    if (currentDownloaded >= 10) {
+                        _errorMessage.value = "Downloading more than 10 dictionaries will lead to error. If you want to use more than 10 dictionaries, use the offline version."
+                        return@launch
+                    }
+                    
                     val nativeName = DictionaryUtils.getNativeName(tableName, tableName)
+                    currentDownloaded++
                     launch {
                         try {
                             _errorMessage.value = null

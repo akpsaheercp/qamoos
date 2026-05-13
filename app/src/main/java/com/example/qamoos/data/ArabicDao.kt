@@ -3,7 +3,6 @@ package com.example.qamoos.data
 import androidx.room.Dao
 import androidx.room.Query
 import androidx.room.RawQuery
-import androidx.room.Update
 import androidx.room.Transaction
 import androidx.sqlite.db.SimpleSQLiteQuery
 import androidx.sqlite.db.SupportSQLiteQuery
@@ -45,7 +44,7 @@ abstract class ArabicDao {
     open suspend fun attachDatabase(path: String, alias: String) {
         try {
             execRawSql("ATTACH DATABASE '$path' AS $alias")
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // Usually occurs if already attached
         }
     }
@@ -64,7 +63,7 @@ abstract class ArabicDao {
                 try {
                     // Use double quotes for alias to avoid issues with reserved words or special characters
                     execRawSql("ATTACH DATABASE '$path' AS \"$alias\"")
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Ignore if already attached or other attachment issues
                 }
             }
@@ -74,7 +73,7 @@ abstract class ArabicDao {
             attachments.forEach { (_, alias) ->
                 try {
                     execRawSql("DETACH DATABASE \"$alias\"")
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     // Ignore if failed to detach
                 }
             }

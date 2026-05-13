@@ -59,6 +59,7 @@ fun SettingsScreen(
     val appLanguage by viewModel.appLanguage.collectAsState()
     val dictionaries by viewModel.dictionaries.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
+    val isFirstRun by viewModel.isFirstRun.collectAsState()
     
     var isReorderMode by remember { mutableStateOf(false) }
     
@@ -68,7 +69,10 @@ fun SettingsScreen(
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
-            snackbarHostState.showSnackbar(it)
+            snackbarHostState.showSnackbar(
+                message = it,
+                duration = if (it.contains("offline version")) SnackbarDuration.Long else SnackbarDuration.Short
+            )
             viewModel.clearError()
         }
     }
@@ -77,15 +81,36 @@ fun SettingsScreen(
         topBar = {
             LargeTopAppBar(
                 title = { 
-                    Text(
-                        stringResource(R.string.settings), 
-                        fontFamily = Manjari,
-                        fontWeight = FontWeight.Bold
-                    ) 
+                    Column {
+                        Text(
+                            stringResource(R.string.settings), 
+                            fontFamily = Manjari,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (isFirstRun) {
+                            Text(
+                                "Setup your library to get started",
+                                style = MaterialTheme.typography.labelMedium,
+                                fontFamily = Manjari,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                    }
+                },
+                actions = {
+                    if (dictionaries.isNotEmpty()) {
+                        IconButton(onClick = { isReorderMode = !isReorderMode }) {
+                            Icon(
+                                if (isReorderMode) Icons.Default.Done else Icons.Default.SwapVert, 
+                                contentDescription = "Reorder",
+                                tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -103,21 +128,23 @@ fun SettingsScreen(
             contentPadding = PaddingValues(bottom = 32.dp)
         ) {
             // --- Library Tools ---
-            item { SettingsSectionHeader(title = "Tools") }
-            item {
-                SettingsGroup {
-                    SettingsClickableItem(
-                        title = stringResource(R.string.history),
-                        description = "Previously viewed meanings",
-                        icon = Icons.Default.History,
-                        onClick = onNavigateToHistory
-                    )
-                    SettingsClickableItem(
-                        title = stringResource(R.string.favorites),
-                        description = "Saved words and meanings",
-                        icon = Icons.Default.Favorite,
-                        onClick = onNavigateToFavorites
-                    )
+            if (!isReorderMode) {
+                item { SettingsSectionHeader(title = "Tools") }
+                item {
+                    SettingsGroup {
+                        SettingsClickableItem(
+                            title = stringResource(R.string.history),
+                            description = "Previously viewed meanings",
+                            icon = Icons.Default.History,
+                            onClick = onNavigateToHistory
+                        )
+                        SettingsClickableItem(
+                            title = stringResource(R.string.favorites),
+                            description = "Saved words and meanings",
+                            icon = Icons.Default.Favorite,
+                            onClick = onNavigateToFavorites
+                        )
+                    }
                 }
             }
 
@@ -128,15 +155,8 @@ fun SettingsScreen(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    SettingsSectionHeader(title = stringResource(R.string.manage_dictionaries))
-                    Row {
-                        IconButton(onClick = { isReorderMode = !isReorderMode }) {
-                            Icon(
-                                if (isReorderMode) Icons.Default.Done else Icons.Default.Reorder, 
-                                contentDescription = "Reorder",
-                                tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                    SettingsSectionHeader(title = if (isReorderMode) "Prioritize Dictionaries" else stringResource(R.string.manage_dictionaries))
+                    if (!isReorderMode) {
                         TextButton(onClick = { viewModel.downloadAllDictionaries() }) {
                             Icon(Icons.Default.DownloadForOffline, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(modifier = Modifier.width(4.dp))
@@ -147,30 +167,36 @@ fun SettingsScreen(
             }
             
             item {
-                Card(
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
-                    )
+                AnimatedVisibility(
+                    visible = true,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                    Card(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (isReorderMode) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f) else MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.2f)
+                        )
                     ) {
-                        Icon(
-                            Icons.Default.Info, 
-                            contentDescription = null, 
-                            tint = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.size(20.dp)
-                        )
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = if (isReorderMode) "Use arrows to move dictionaries up or down." else "Enable dictionaries to include them in search results.",
-                            style = MaterialTheme.typography.bodySmall,
-                            fontFamily = Manjari,
-                            color = MaterialTheme.colorScheme.onTertiaryContainer
-                        )
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                if (isReorderMode) Icons.Default.SwapVert else Icons.Default.Info, 
+                                contentDescription = null, 
+                                tint = if (isReorderMode) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = if (isReorderMode) "Use arrows to move dictionaries. Top dictionaries appear first in search results." else "Enable dictionaries to include them in search results. You can download up to 10 dictionaries.",
+                                style = MaterialTheme.typography.bodySmall,
+                                fontFamily = Manjari,
+                                color = if (isReorderMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                        }
                     }
                 }
             }
@@ -210,92 +236,94 @@ fun SettingsScreen(
             }
 
             // --- Appearance Section ---
-            item { SettingsSectionHeader(title = stringResource(R.string.appearance)) }
-            item {
-                SettingsGroup {
-                    SettingsSelectionItem(
-                        title = stringResource(R.string.theme),
-                        icon = Icons.Default.Palette,
-                        options = listOf("light", "dark", "system"),
-                        selectedOption = darkThemeConfig,
-                        onOptionSelected = { viewModel.updateTheme(it) },
-                        optionLabels = mapOf(
-                            "light" to stringResource(R.string.light),
-                            "dark" to stringResource(R.string.dark),
-                            "system" to stringResource(R.string.system)
+            if (!isReorderMode) {
+                item { SettingsSectionHeader(title = stringResource(R.string.appearance)) }
+                item {
+                    SettingsGroup {
+                        SettingsSelectionItem(
+                            title = stringResource(R.string.theme),
+                            icon = Icons.Default.Palette,
+                            options = listOf("light", "dark", "system"),
+                            selectedOption = darkThemeConfig,
+                            onOptionSelected = { viewModel.updateTheme(it) },
+                            optionLabels = mapOf(
+                                "light" to stringResource(R.string.light),
+                                "dark" to stringResource(R.string.dark),
+                                "system" to stringResource(R.string.system)
+                            )
                         )
-                    )
-                    SettingsSelectionItem(
-                        title = stringResource(R.string.language),
-                        icon = Icons.Default.Language,
-                        options = listOf("en", "ml", "ar"),
-                        selectedOption = appLanguage ?: "en",
-                        onOptionSelected = { viewModel.updateLanguage(it) },
-                        optionLabels = mapOf(
-                            "en" to "English",
-                            "ml" to "മലയാളം",
-                            "ar" to "العربية"
+                        SettingsSelectionItem(
+                            title = stringResource(R.string.language),
+                            icon = Icons.Default.Language,
+                            options = listOf("en", "ml", "ar"),
+                            selectedOption = appLanguage ?: "en",
+                            onOptionSelected = { viewModel.updateLanguage(it) },
+                            optionLabels = mapOf(
+                                "en" to "English",
+                                "ml" to "മലയാളം",
+                                "ar" to "العربية"
+                            )
                         )
-                    )
-                    SettingsSliderItem(
-                        title = stringResource(R.string.font_size),
-                        icon = Icons.Default.TextFields,
-                        value = fontSizeMultiplier,
-                        onValueChange = { viewModel.updateFontSize(it) },
-                        range = 0.8f..1.5f,
-                        steps = 7,
-                        previewText = stringResource(R.string.preview_text)
-                    )
-                }
-            }
-
-            // --- Community & Support ---
-            item { SettingsSectionHeader(title = "Community & Support") }
-            item {
-                SettingsGroup {
-                    val uriHandler = LocalUriHandler.current
-                    SettingsClickableItem(
-                        title = "Telegram Community",
-                        description = "Join for discussions and updates",
-                        icon = Icons.AutoMirrored.Filled.Message,
-                        onClick = { uriHandler.openUri("https://t.me/qamoos") }
-                    )
-                    SettingsClickableItem(
-                        title = "Contact Developer",
-                        description = "WhatsApp or Telegram for feedback",
-                        icon = Icons.Default.Person,
-                        onClick = { uriHandler.openUri("https://wa.me/917902520097") }
-                    )
-                }
-            }
-
-            // --- Support the Project (Donation) ---
-            item {
-                DonationCard(
-                    onDonateClick = {
-                        val upiUri = Uri.parse("upi://pay?pa=akpsaheer@okhdfcbank&pn=QamoosApp&cu=INR")
-                        val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
-                        val chooser = Intent.createChooser(upiIntent, "Donate via UPI")
-                        try {
-                            context.startActivity(chooser)
-                        } catch (e: Exception) {
-                            Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
-                        }
+                        SettingsSliderItem(
+                            title = stringResource(R.string.font_size),
+                            icon = Icons.Default.TextFields,
+                            value = fontSizeMultiplier,
+                            onValueChange = { viewModel.updateFontSize(it) },
+                            range = 0.8f..1.5f,
+                            steps = 7,
+                            previewText = stringResource(R.string.preview_text)
+                        )
                     }
-                )
-            }
+                }
 
-            item {
-                Box(
-                    modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "Version 1.0.0",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                        fontFamily = Manjari
+                // --- Community & Support ---
+                item { SettingsSectionHeader(title = "Community & Support") }
+                item {
+                    SettingsGroup {
+                        val uriHandler = LocalUriHandler.current
+                        SettingsClickableItem(
+                            title = "Telegram Community",
+                            description = "Join for discussions and updates",
+                            icon = Icons.AutoMirrored.Filled.Message,
+                            onClick = { uriHandler.openUri("https://t.me/qamoos") }
+                        )
+                        SettingsClickableItem(
+                            title = "Contact Developer",
+                            description = "WhatsApp or Telegram for feedback",
+                            icon = Icons.Default.Person,
+                            onClick = { uriHandler.openUri("https://wa.me/917902520097") }
+                        )
+                    }
+                }
+
+                // --- Support the Project (Donation) ---
+                item {
+                    DonationCard(
+                        onDonateClick = {
+                            val upiUri = Uri.parse("upi://pay?pa=akpsaheer@okhdfcbank&pn=QamoosApp&cu=INR")
+                            val upiIntent = Intent(Intent.ACTION_VIEW, upiUri)
+                            val chooser = Intent.createChooser(upiIntent, "Donate via UPI")
+                            try {
+                                context.startActivity(chooser)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "No UPI app found", Toast.LENGTH_SHORT).show()
+                            }
+                        }
                     )
+                }
+
+                item {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(top = 32.dp, bottom = 16.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "Version 1.0.0",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                            fontFamily = Manjari
+                        )
+                    }
                 }
             }
         }

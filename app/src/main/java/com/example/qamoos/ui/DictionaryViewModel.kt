@@ -11,6 +11,7 @@ import com.example.qamoos.data.UnifiedEntry
 import com.example.qamoos.utils.DictionaryManager
 import com.example.qamoos.utils.DictionaryUtils
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -67,7 +68,7 @@ class DictionaryViewModel(
         // No longer need the manual polling loop as it's handled by the Flow above
     }
 
-    @OptIn(ExperimentalCoroutinesApi::class)
+    @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
     val searchResults: StateFlow<List<UnifiedEntry>> = combine(
         _searchQuery.debounce(300).distinctUntilChanged(),
         _isExactMatch,
@@ -83,9 +84,9 @@ class DictionaryViewModel(
         }
         
         Triple(query, exact, availableDicts)
-    }.flatMapLatest { (originalQuery, exact, dicts) ->
+    }.flatMapLatest { (originalQuery: String, exact: Boolean, dicts: List<DictionaryInfo>) ->
         if (originalQuery.isEmpty() || dicts.isEmpty()) {
-            flowOf(emptyList())
+            flowOf(emptyList<UnifiedEntry>())
         } else {
             val normalizedQuery = normalizeArabic(originalQuery)
             
@@ -112,7 +113,7 @@ class DictionaryViewModel(
                 // Sort results: matches to the exact query first, then by dictionary priority
                 val sortedResults = allResults.sortedWith(
                     compareByDescending<UnifiedEntry> { 
-                        it.wordNoHarakah == normalizedQuery || it.word == originalQuery 
+                        (it.wordNoHarakah == normalizedQuery || it.word == originalQuery)
                     }.thenBy { 
                         it.displayOrder ?: 999
                     }.thenBy { 
