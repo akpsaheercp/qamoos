@@ -24,6 +24,7 @@ class SettingsViewModel(
 
     val downloadProgress = dictionaryManager.downloadProgress
     val isPaused = dictionaryManager.isPaused
+    val downloadingTables = dictionaryManager.downloadingTables
     private val _onlineDictNames = MutableStateFlow<List<String>>(emptyList())
     
     private val _startingDownloads = MutableStateFlow<Set<String>>(emptySet())

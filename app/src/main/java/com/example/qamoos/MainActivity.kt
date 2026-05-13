@@ -10,8 +10,8 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -82,7 +82,6 @@ class MainActivity : AppCompatActivity() {
             val darkThemeConfig by userPreferences.darkThemeConfig.collectAsState(initial = "system")
             val fontSizeMultiplier by userPreferences.fontSizeMultiplier.collectAsState(initial = 1.0f)
             val appLanguage by userPreferences.appLanguage.collectAsState(initial = "en")
-            val isFirstRun by userPreferences.isFirstRun.collectAsState(initial = true)
 
             val coroutineScope = rememberCoroutineScope()
 
@@ -118,23 +117,30 @@ class MainActivity : AppCompatActivity() {
 
                 val navController = rememberNavController()
                 var showManualLanguageDialog by remember { mutableStateOf(false) }
+                
+                val isAnyDictionaryDownloaded by dictionaryViewModel.isAnyDictionaryDownloaded.collectAsState()
+                val isFirstRun by dictionaryViewModel.isFirstRun.collectAsState()
 
                 Surface(
                     color = MaterialTheme.colorScheme.background,
                     modifier = Modifier.fillMaxSize()
                 ) {
-                    NavHost(navController = navController, startDestination = "dictionary") {
-                        composable("dictionary") {
-                            DictionaryScreen(
-                                viewModel = dictionaryViewModel,
-                                onNavigateToSettings = { navController.navigate("settings") },
-                                onNavigateToLibrary = { navController.navigate("settings") },
-                                onShowLanguageDialog = { showManualLanguageDialog = true },
-                                onResultClick = { index ->
-                                    navController.navigate("detail/$index")
-                                },
-                                fontSizeMultiplier = fontSizeMultiplier
-                            )
+                    NavHost(navController = navController, startDestination = "main_content") {
+                        composable("main_content") {
+                            if (!isAnyDictionaryDownloaded && isFirstRun) {
+                                SetupLibraryScreen(onNavigateToLibrary = { navController.navigate("settings") })
+                            } else {
+                                DictionaryScreen(
+                                    viewModel = dictionaryViewModel,
+                                    onNavigateToSettings = { navController.navigate("settings") },
+                                    onNavigateToLibrary = { navController.navigate("settings") },
+                                    onShowLanguageDialog = { showManualLanguageDialog = true },
+                                    onResultClick = { index ->
+                                        navController.navigate("detail/$index")
+                                    },
+                                    fontSizeMultiplier = fontSizeMultiplier
+                                )
+                            }
                         }
                         composable("settings") {
                             SettingsScreen(
@@ -236,7 +242,7 @@ class MainActivity : AppCompatActivity() {
                         }
                     }
 
-                    if (isFirstRun || showManualLanguageDialog) {
+                    if (showManualLanguageDialog) {
                         LanguageSelectionDialog(
                             onLanguageSelected = { languageCode ->
                                 coroutineScope.launch {
@@ -244,11 +250,75 @@ class MainActivity : AppCompatActivity() {
                                     showManualLanguageDialog = false
                                 }
                             },
-                            isDismissible = !isFirstRun,
+                            isDismissible = true,
                             onDismiss = { showManualLanguageDialog = false }
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun SetupLibraryScreen(onNavigateToLibrary: () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(24.dp)
+                .fillMaxWidth(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Surface(
+                modifier = Modifier.size(80.dp),
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Default.MenuBook, 
+                        contentDescription = null, 
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            Text(
+                "Ready to Start?", 
+                fontFamily = Manjari, 
+                fontWeight = FontWeight.Bold,
+                style = MaterialTheme.typography.headlineMedium,
+                textAlign = TextAlign.Center
+            )
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            Text(
+                "Please install at least one dictionary to start searching words and meanings.",
+                fontFamily = Manjari,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 24.sp
+            )
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            Button(
+                onClick = onNavigateToLibrary,
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Icon(Icons.Default.Download, contentDescription = null)
+                Spacer(modifier = Modifier.width(12.dp))
+                Text("Go to Library", fontFamily = Manjari, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         }
     }
@@ -344,7 +414,7 @@ private fun LanguageOption(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primaryContainer, androidx.compose.foundation.shape.CircleShape),
+                    .background(MaterialTheme.colorScheme.primaryContainer, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -530,180 +600,113 @@ fun DictionaryScreen(
                 .padding(innerPadding)
                 .fillMaxSize()
         ) {
-            if (!isAnyDictionaryDownloaded && isFirstRun) {
-                AlertDialog(
-                    onDismissRequest = { /* Don't allow dismissal until a dictionary is downloaded or user explicitly navigates */ },
-                    properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
-                    confirmButton = {
-                        Button(
-                            onClick = onNavigateToLibrary,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Icon(Icons.Default.Download, contentDescription = null)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text("Go to Library", fontFamily = Manjari, fontWeight = FontWeight.Bold)
-                        }
-                    },
-                    icon = {
-                        Surface(
-                            modifier = Modifier.size(64.dp),
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Icon(
-                                    Icons.Default.MenuBook, 
-                                    contentDescription = null, 
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(32.dp)
-                                )
+            Box(
+                modifier = Modifier
+                    .padding(horizontal = 16.dp, vertical = 12.dp)
+                    .fillMaxWidth()
+            ) {
+                val isQueryLtr = LanguageUtils.isMalayalam(searchQuery) || LanguageUtils.isEnglish(searchQuery)
+                CompositionLocalProvider(LocalLayoutDirection provides if (isQueryLtr) LayoutDirection.Ltr else LayoutDirection.Rtl) {
+                    OutlinedTextField(
+                        value = searchQuery,
+                        onValueChange = { viewModel.onSearchQueryChange(it) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(focusRequester)
+                            .shadow(elevation = 2.dp, shape = RoundedCornerShape(28.dp)),
+                        placeholder = { 
+                            Text(
+                                stringResource(R.string.search_placeholder),
+                                fontFamily = Manjari,
+                                fontSize = (18 * fontSizeMultiplier).sp,
+                                modifier = Modifier.fillMaxWidth(),
+                                textAlign = if (isQueryLtr) TextAlign.Left else TextAlign.Right,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                            ) 
+                        },
+                        leadingIcon = { 
+                            Icon(
+                                Icons.Rounded.Search, 
+                                contentDescription = null, 
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(start = 8.dp)
+                            ) 
+                        },
+                        trailingIcon = {
+                            if (searchQuery.isNotEmpty()) {
+                                IconButton(
+                                    onClick = { viewModel.onSearchQueryChange("") },
+                                    modifier = Modifier.padding(end = 4.dp)
+                                ) {
+                                    Icon(
+                                        Icons.Default.Clear, 
+                                        contentDescription = "Clear",
+                                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
-                        }
-                    },
-                    title = {
-                        Text(
-                            "Ready to Start?", 
-                            fontFamily = Manjari, 
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth()
+                        },
+                        singleLine = true,
+                        shape = RoundedCornerShape(28.dp),
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                if (searchResults.isNotEmpty()) {
+                                    focusManager.clearFocus()
+                                    onResultClick(0)
+                                }
+                            }
+                        ),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            unfocusedBorderColor = Color.Transparent,
+                            focusedContainerColor = MaterialTheme.colorScheme.surface,
+                            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
+                        ),
+                        textStyle = TextStyle(
+                            fontFamily = if (isQueryLtr) Manjari else ScheherazadeNew,
+                            fontSize = (if (isQueryLtr) 18 else 22).sp * fontSizeMultiplier,
+                            textDirection = if (isQueryLtr) TextDirection.Ltr else TextDirection.Rtl,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
-                    },
-                    text = {
-                        Text(
-                            "Please install at least one dictionary to start searching words and meanings.",
-                            fontFamily = Manjari,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.fillMaxWidth(),
-                            lineHeight = 20.sp
-                        )
-                    },
-                    shape = RoundedCornerShape(28.dp),
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 6.dp
-                )
-                
-                // Fallback background content while dialog is showing
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        "Setup your library to get started",
-                        fontFamily = Manjari,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                     )
                 }
-            } else {
-                Box(
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
-                        .fillMaxWidth()
-                ) {
-                    val isQueryLtr = LanguageUtils.isMalayalam(searchQuery) || LanguageUtils.isEnglish(searchQuery)
-                    CompositionLocalProvider(LocalLayoutDirection provides if (isQueryLtr) LayoutDirection.Ltr else LayoutDirection.Rtl) {
-                        OutlinedTextField(
-                            value = searchQuery,
-                            onValueChange = { viewModel.onSearchQueryChange(it) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(focusRequester)
-                                .shadow(elevation = 2.dp, shape = RoundedCornerShape(28.dp)),
-                            placeholder = { 
-                                Text(
-                                    stringResource(R.string.search_placeholder),
-                                    fontFamily = Manjari,
-                                    fontSize = (18 * fontSizeMultiplier).sp,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    textAlign = if (isQueryLtr) TextAlign.Left else TextAlign.Right,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                                ) 
-                            },
-                            leadingIcon = { 
-                                Icon(
-                                    Icons.Rounded.Search, 
-                                    contentDescription = null, 
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.padding(start = 8.dp)
-                                ) 
-                            },
-                            trailingIcon = {
-                                if (searchQuery.isNotEmpty()) {
-                                    IconButton(
-                                        onClick = { viewModel.onSearchQueryChange("") },
-                                        modifier = Modifier.padding(end = 4.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.Clear, 
-                                            contentDescription = "Clear",
-                                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            shape = RoundedCornerShape(28.dp),
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(
-                                onSearch = {
-                                    if (searchResults.isNotEmpty()) {
-                                        focusManager.clearFocus()
-                                        onResultClick(0)
-                                    }
-                                }
-                            ),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
-                                unfocusedBorderColor = Color.Transparent,
-                                focusedContainerColor = MaterialTheme.colorScheme.surface,
-                                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceColorAtElevation(4.dp)
-                            ),
-                            textStyle = TextStyle(
-                                fontFamily = if (isQueryLtr) Manjari else ScheherazadeNew,
-                                fontSize = (if (isQueryLtr) 18 else 22).sp * fontSizeMultiplier,
-                                textDirection = if (isQueryLtr) TextDirection.Ltr else TextDirection.Rtl,
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
+            }
+
+            AnimatedContent(
+                targetState = searchResults.isEmpty() to searchQuery.isEmpty(),
+                label = "results_state"
+            ) { (isEmpty, isQueryEmpty) ->
+                when {
+                    isQueryEmpty -> {
+                        EmptyStateView(
+                            icon = Icons.Rounded.Search,
+                            message = stringResource(R.string.enter_search_query)
                         )
                     }
-                }
-
-                AnimatedContent(
-                    targetState = searchResults.isEmpty() to searchQuery.isEmpty(),
-                    label = "results_state"
-                ) { (isEmpty, isQueryEmpty) ->
-                    when {
-                        isQueryEmpty -> {
-                            EmptyStateView(
-                                icon = Icons.Rounded.Search,
-                                message = stringResource(R.string.enter_search_query)
-                            )
-                        }
-                        isEmpty -> {
-                            EmptyStateView(
-                                icon = Icons.Default.Info,
-                                message = stringResource(R.string.no_results_found, searchQuery)
-                            )
-                        }
-                        else -> {
-                            LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
-                                contentPadding = PaddingValues(bottom = 16.dp, start = 16.dp, end = 16.dp),
-                                verticalArrangement = Arrangement.spacedBy(4.dp)
-                            ) {
-                                itemsIndexed(
-                                    items = searchResults,
-                                    key = { _, it -> "${it.dictionaryName}_${it.id ?: it.hashCode()}" }
-                                ) { index, entry ->
-                                    DictionaryResultCard(
-                                        entry = entry,
-                                        fontSizeMultiplier = fontSizeMultiplier,
-                                        isAlternate = index % 2 != 0
-                                    ) {
-                                        focusManager.clearFocus()
-                                        onResultClick(index)
-                                    }
+                    isEmpty -> {
+                        EmptyStateView(
+                            icon = Icons.Default.Info,
+                            message = stringResource(R.string.no_results_found, searchQuery)
+                        )
+                    }
+                    else -> {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(bottom = 16.dp, start = 16.dp, end = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            itemsIndexed(
+                                items = searchResults,
+                                key = { _, it -> "${it.dictionaryName}_${it.id ?: it.hashCode()}" }
+                            ) { index, entry ->
+                                DictionaryResultCard(
+                                    entry = entry,
+                                    fontSizeMultiplier = fontSizeMultiplier,
+                                    isAlternate = index % 2 != 0
+                                ) {
+                                    focusManager.clearFocus()
+                                    onResultClick(index)
                                 }
                             }
                         }
@@ -739,14 +742,14 @@ fun MeaningSection(
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp),
-        shape = RoundedCornerShape(16.dp),
+            .padding(vertical = 2.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = containerColor,
             contentColor = contentColor
         )
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             if (title != null) {
                 Text(
                     text = title,
@@ -883,11 +886,11 @@ fun DetailPagerScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(horizontal = 16.dp)
-                        .padding(bottom = 32.dp),
+                        .padding(horizontal = 8.dp)
+                        .padding(bottom = 24.dp),
                     horizontalAlignment = if (isLtr) Alignment.Start else Alignment.End
                 ) {
-                    Spacer(modifier = Modifier.height(with(androidx.compose.ui.platform.LocalDensity.current) { headerHeight.toDp() } + 16.dp))
+                    Spacer(modifier = Modifier.height(with(androidx.compose.ui.platform.LocalDensity.current) { headerHeight.toDp() } + 8.dp))
                     
                     SelectionContainer {
                         Column(modifier = Modifier.fillMaxWidth()) {

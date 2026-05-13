@@ -382,6 +382,10 @@ fun DictionarySettingsItem(
     val downloadProgress = progressMap[dict.tableName]
     val isPaused = isPausedMap[dict.tableName] ?: false
     val isStarting = startingDownloads.contains(dict.tableName)
+    val downloadingTables by viewModel.downloadingTables.collectAsState()
+    val isDownloading = downloadingTables.contains(dict.tableName?.lowercase())
+    
+    val showProgress = (isStarting || isDownloading || downloadProgress != null) && !isDownloaded
     
     ListItem(
         modifier = modifier
@@ -400,21 +404,48 @@ fun DictionarySettingsItem(
             )
         },
         supportingContent = {
-            Text(
-                text = when {
-                    isDownloaded -> "Installed"
-                    isStarting -> "Starting..."
-                    downloadProgress != null -> if (isPaused) "Paused" else "Downloading ${downloadProgress.toInt()}%"
-                    else -> DictionaryMetadata.getSize(dict.tableName)
-                },
-                fontFamily = Manjari,
-                fontSize = 12.sp,
-                color = when {
-                    isDownloaded -> MaterialTheme.colorScheme.primary
-                    isStarting || downloadProgress != null -> MaterialTheme.colorScheme.tertiary
-                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+            Column {
+                Text(
+                    text = when {
+                        isDownloaded -> "Installed"
+                        isStarting -> "Starting..."
+                        isDownloading && downloadProgress == null -> "Connecting..."
+                        downloadProgress != null -> if (isPaused) "Paused" else "Downloading ${downloadProgress.toInt()}%"
+                        else -> DictionaryMetadata.getSize(dict.tableName)
+                    },
+                    fontFamily = Manjari,
+                    fontSize = 12.sp,
+                    color = when {
+                        isDownloaded -> MaterialTheme.colorScheme.primary
+                        isStarting || isDownloading || downloadProgress != null -> MaterialTheme.colorScheme.tertiary
+                        else -> MaterialTheme.colorScheme.onSurfaceVariant
+                    }
+                )
+                
+                if (showProgress) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    if (downloadProgress != null) {
+                        LinearProgressIndicator(
+                            progress = { downloadProgress / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
+                            trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+                        )
+                    } else {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = MaterialTheme.colorScheme.tertiary,
+                            trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+                        )
+                    }
                 }
-            )
+            }
         },
         leadingContent = {
             if (isReorderMode) {
@@ -507,9 +538,9 @@ fun DictionarySettingsItem(
                             },
                             modifier = Modifier.scale(0.8f)
                         )
-                    } else if (isStarting || downloadProgress != null) {
+                    } else if (isStarting || isDownloading || downloadProgress != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (isStarting) {
+                            if (isStarting || (isDownloading && downloadProgress == null)) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(24.dp),
                                     strokeWidth = 2.dp,
@@ -538,31 +569,6 @@ fun DictionarySettingsItem(
         },
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
-    
-    if ((isStarting || downloadProgress != null) && !isDownloaded) {
-        if (isStarting) {
-            LinearProgressIndicator(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 2.dp)
-                    .height(3.dp)
-                    .clip(CircleShape),
-                color = MaterialTheme.colorScheme.tertiary,
-                trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
-            )
-        } else {
-            LinearProgressIndicator(
-                progress = (downloadProgress ?: 0f) / 100f,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 2.dp)
-                    .height(3.dp)
-                    .clip(CircleShape),
-                color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
-                trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
-            )
-        }
-    }
 }
 
 @Composable
