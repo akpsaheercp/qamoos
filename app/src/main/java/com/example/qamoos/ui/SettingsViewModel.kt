@@ -26,6 +26,9 @@ class SettingsViewModel(
     val isPaused = dictionaryManager.isPaused
     private val _onlineDictNames = MutableStateFlow<List<String>>(emptyList())
     
+    private val _startingDownloads = MutableStateFlow<Set<String>>(emptySet())
+    val startingDownloads: StateFlow<Set<String>> = _startingDownloads
+
     private val _errorMessage = MutableStateFlow<String?>(null)
     val errorMessage: StateFlow<String?> = _errorMessage
 
@@ -82,24 +85,27 @@ class SettingsViewModel(
 
     fun downloadDictionary(tableName: String?) {
         Log.d("SettingsViewModel", "downloadDictionary requested for: $tableName")
-        tableName?.let {
+        tableName?.let { table ->
             val downloadedCount = dictionaries.value.count { dict -> dictionaryManager.isDownloaded(dict.tableName ?: "") }
             if (downloadedCount >= 10) {
                 _errorMessage.value = "Downloading more than 10 dictionaries will lead to error. If you want to use more than 10 dictionaries, use the offline version."
                 return
             }
             
-            val nativeName = DictionaryUtils.getNativeName(it, it)
+            _startingDownloads.value = _startingDownloads.value + table
+            val nativeName = DictionaryUtils.getNativeName(table, table)
             viewModelScope.launch {
                 try {
                     _errorMessage.value = null
-                    Log.i("SettingsViewModel", "Starting download job for: $it")
-                    dictionaryManager.downloadDictionary(it)
-                    Log.i("SettingsViewModel", "Download job completed for: $it")
-                    userPreferences.toggleDictionary(it, true)
+                    Log.i("SettingsViewModel", "Starting download job for: $table")
+                    dictionaryManager.downloadDictionary(table)
+                    Log.i("SettingsViewModel", "Download job completed for: $table")
+                    userPreferences.toggleDictionary(table, true)
                 } catch (e: Exception) {
-                    Log.e("SettingsViewModel", "Error in download job for: $it", e)
+                    Log.e("SettingsViewModel", "Error in download job for: $table", e)
                     _errorMessage.value = "Error downloading $nativeName: ${e.message ?: "Unknown error"}"
+                } finally {
+                    _startingDownloads.value = _startingDownloads.value - table
                 }
             }
         } ?: Log.e("SettingsViewModel", "tableName is null, cannot download")
@@ -189,6 +195,7 @@ class SettingsViewModel(
                         return@launch
                     }
                     
+                    _startingDownloads.value = _startingDownloads.value + tableName
                     val nativeName = DictionaryUtils.getNativeName(tableName, tableName)
                     currentDownloaded++
                     launch {
@@ -199,6 +206,8 @@ class SettingsViewModel(
                         } catch (e: Exception) {
                             Log.e("SettingsViewModel", "Error in download all for: $tableName", e)
                             _errorMessage.value = "Error downloading $nativeName: ${e.message ?: "Unknown error"}"
+                        } finally {
+                            _startingDownloads.value = _startingDownloads.value - tableName
                         }
                     }
                 }

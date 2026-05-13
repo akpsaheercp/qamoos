@@ -349,9 +349,11 @@ fun DictionarySettingsItem(
     val isDownloaded = viewModel.isDownloaded(dict.tableName)
     val progressMap by viewModel.downloadProgress.collectAsState()
     val isPausedMap by viewModel.isPaused.collectAsState()
+    val startingDownloads by viewModel.startingDownloads.collectAsState()
     
     val downloadProgress = progressMap[dict.tableName]
     val isPaused = isPausedMap[dict.tableName] ?: false
+    val isStarting = startingDownloads.contains(dict.tableName)
     
     ListItem(
         modifier = Modifier
@@ -373,6 +375,7 @@ fun DictionarySettingsItem(
             Text(
                 text = when {
                     isDownloaded -> "Installed"
+                    isStarting -> "Starting..."
                     downloadProgress != null -> if (isPaused) "Paused" else "Downloading ${downloadProgress.toInt()}%"
                     else -> DictionaryMetadata.getSize(dict.tableName)
                 },
@@ -380,7 +383,7 @@ fun DictionarySettingsItem(
                 fontSize = 12.sp,
                 color = when {
                     isDownloaded -> MaterialTheme.colorScheme.primary
-                    downloadProgress != null -> MaterialTheme.colorScheme.tertiary
+                    isStarting || downloadProgress != null -> MaterialTheme.colorScheme.tertiary
                     else -> MaterialTheme.colorScheme.onSurfaceVariant
                 }
             )
@@ -461,17 +464,25 @@ fun DictionarySettingsItem(
                             },
                             modifier = Modifier.scale(0.8f)
                         )
-                    } else if (downloadProgress != null) {
+                    } else if (isStarting || downloadProgress != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            IconButton(onClick = if (isPaused) onResumeClick else onPauseClick) {
-                                Icon(
-                                    if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.tertiary
+                            if (isStarting) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(24.dp),
+                                    strokeWidth = 2.dp,
+                                    color = MaterialTheme.colorScheme.tertiary
                                 )
-                            }
-                            IconButton(onClick = onCancelClick) {
-                                Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                            } else {
+                                IconButton(onClick = if (isPaused) onResumeClick else onPauseClick) {
+                                    Icon(
+                                        if (isPaused) Icons.Default.PlayArrow else Icons.Default.Pause,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.tertiary
+                                    )
+                                }
+                                IconButton(onClick = onCancelClick) {
+                                    Icon(Icons.Default.Close, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+                                }
                             }
                         }
                     } else {
@@ -485,9 +496,9 @@ fun DictionarySettingsItem(
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
     
-    if (downloadProgress != null && !isDownloaded) {
+    if ((isStarting || downloadProgress != null) && !isDownloaded) {
         LinearProgressIndicator(
-            progress = { downloadProgress / 100f },
+            progress = { if (isStarting) 0f else (downloadProgress ?: 0f) / 100f },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 24.dp)
