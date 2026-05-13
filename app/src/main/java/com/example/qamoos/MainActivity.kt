@@ -530,83 +530,69 @@ fun DictionaryScreen(
                 .fillMaxSize()
         ) {
             if (!isAnyDictionaryDownloaded && isFirstRun) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
+                AlertDialog(
+                    onDismissRequest = { /* Don't allow dismissal until a dictionary is downloaded or user explicitly navigates */ },
+                    properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+                    confirmButton = {
+                        Button(
+                            onClick = onNavigateToLibrary,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Go to Library", fontFamily = Manjari, fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    icon = {
                         Surface(
-                            modifier = Modifier.size(120.dp),
-                            shape = RoundedCornerShape(32.dp),
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                            modifier = Modifier.size(64.dp),
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
-                                    Icons.Default.AutoAwesome,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.primary
+                                    Icons.Default.MenuBook, 
+                                    contentDescription = null, 
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(32.dp)
                                 )
                             }
                         }
-                        
-                        Spacer(modifier = Modifier.height(32.dp))
-                        
+                    },
+                    title = {
                         Text(
-                            text = "Welcome to Qamoos",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontFamily = Manjari,
+                            "Ready to Start?", 
+                            fontFamily = Manjari, 
                             fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth()
                         )
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
+                    },
+                    text = {
                         Text(
-                            text = "Your journey to mastering Arabic begins here. Start by setting up your dictionary library.",
-                            style = MaterialTheme.typography.bodyLarge,
+                            "Please install at least one dictionary to start searching words and meanings.",
                             fontFamily = Manjari,
                             textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp)
+                            modifier = Modifier.fillMaxWidth(),
+                            lineHeight = 20.sp
                         )
-                        
-                        Spacer(modifier = Modifier.height(48.dp))
-                        
-                        Button(
-                            onClick = onNavigateToLibrary,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(56.dp),
-                            shape = RoundedCornerShape(16.dp),
-                            elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp)
-                        ) {
-                            Icon(Icons.Default.RocketLaunch, contentDescription = null)
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Text(
-                                "Get Started", 
-                                fontFamily = Manjari, 
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 18.sp
-                            )
-                        }
-                        
-                        TextButton(
-                            onClick = onNavigateToSettings,
-                            modifier = Modifier.padding(top = 16.dp)
-                        ) {
-                            Text(
-                                "Configure Settings",
-                                fontFamily = Manjari,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    }
+                    },
+                    shape = RoundedCornerShape(28.dp),
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 6.dp
+                )
+                
+                // Fallback background content while dialog is showing
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        "Setup your library to get started",
+                        fontFamily = Manjari,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                    )
                 }
             } else {
                 Box(

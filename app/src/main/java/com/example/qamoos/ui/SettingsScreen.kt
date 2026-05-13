@@ -540,16 +540,28 @@ fun DictionarySettingsItem(
     )
     
     if ((isStarting || downloadProgress != null) && !isDownloaded) {
-        LinearProgressIndicator(
-            progress = { if (isStarting) 0f else (downloadProgress ?: 0f) / 100f },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp)
-                .height(2.dp)
-                .clip(CircleShape),
-            color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
-            trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
-        )
+        if (isStarting) {
+            LinearProgressIndicator(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 2.dp)
+                    .height(3.dp)
+                    .clip(CircleShape),
+                color = MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+            )
+        } else {
+            LinearProgressIndicator(
+                progress = (downloadProgress ?: 0f) / 100f,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 2.dp)
+                    .height(3.dp)
+                    .clip(CircleShape),
+                color = if (isPaused) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.tertiary,
+                trackColor = MaterialTheme.colorScheme.tertiary.copy(alpha = 0.1f)
+            )
+        }
     }
 }
 
