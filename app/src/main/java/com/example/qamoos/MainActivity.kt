@@ -80,8 +80,8 @@ class MainActivity : AppCompatActivity() {
             val userPreferences = remember { UserPreferences(context) }
             val darkThemeConfig by userPreferences.darkThemeConfig.collectAsState(initial = "system")
             val fontSizeMultiplier by userPreferences.fontSizeMultiplier.collectAsState(initial = 1.0f)
-            val appLanguage by userPreferences.appLanguage.collectAsState(initial = null)
-            val isFirstRun by userPreferences.isFirstRun.collectAsState(initial = false)
+            val appLanguage by userPreferences.appLanguage.collectAsState(initial = "en")
+            val isFirstRun by userPreferences.isFirstRun.collectAsState(initial = true)
 
             val coroutineScope = rememberCoroutineScope()
 
