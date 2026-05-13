@@ -151,8 +151,8 @@ class DictionaryViewModel(
                 else -> Quadruple("_id", "word", "meaning", "word_no_harakah")
             }
 
-            // Limit per table to ensure we get results from all tables in the batch
-            "SELECT $idCol as id, $wordCol as word, $searchCol as wordNoHarakah, $meaningCol as meaning, '${displayName.replace("'", "''")}' as dictionaryName, $displayOrder as displayOrder FROM \"$tableName\".$tableName WHERE $searchCol $operator ? LIMIT 50"
+            // Use subqueries to allow per-table LIMIT when used with UNION ALL
+            "SELECT * FROM (SELECT $idCol as id, $wordCol as word, $searchCol as wordNoHarakah, $meaningCol as meaning, '${displayName.replace("'", "''")}' as dictionaryName, $displayOrder as displayOrder FROM \"$tableName\".$tableName WHERE $searchCol $operator ? LIMIT 50)"
         }
 
         val finalQuery = selectStatements.joinToString(" UNION ALL ")
