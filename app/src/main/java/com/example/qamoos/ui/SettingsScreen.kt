@@ -57,15 +57,26 @@ fun SettingsScreen(
     val fontSizeMultiplier by viewModel.fontSizeMultiplier.collectAsState()
     val darkThemeConfig by viewModel.darkThemeConfig.collectAsState()
     val appLanguage by viewModel.appLanguage.collectAsState()
-    val dictionaries by viewModel.dictionaries.collectAsState()
+    val dictionariesState by viewModel.dictionaries.collectAsState()
     val errorMessage by viewModel.errorMessage.collectAsState()
     val isFirstRun by viewModel.isFirstRun.collectAsState()
     
     var isReorderMode by remember { mutableStateOf(false) }
     
+    // Local list for drag-and-drop to ensure smooth UI updates
+    var localDictionaries by remember { mutableStateOf(dictionariesState) }
+    
+    // Update local list when database list changes, but not during reorder mode
+    LaunchedEffect(dictionariesState) {
+        if (!isReorderMode) {
+            localDictionaries = dictionariesState
+        }
+    }
+
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val haptic = LocalHapticFeedback.current
 
     LaunchedEffect(errorMessage) {
         errorMessage?.let {
@@ -103,8 +114,15 @@ fun SettingsScreen(
                     }
                 },
                 actions = {
-                    if (dictionaries.isNotEmpty()) {
-                        IconButton(onClick = { isReorderMode = !isReorderMode }) {
+                    if (localDictionaries.isNotEmpty()) {
+                        IconButton(onClick = { 
+                            if (isReorderMode) {
+                                // Save changes when exiting reorder mode
+                                viewModel.updateDictionaryOrders(localDictionaries)
+                            }
+                            isReorderMode = !isReorderMode 
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        }) {
                             Icon(
                                 if (isReorderMode) Icons.Default.Done else Icons.Default.SwapVert, 
                                 contentDescription = "Reorder",
@@ -121,7 +139,10 @@ fun SettingsScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { innerPadding ->
+        val listState = rememberLazyListState()
+        
         LazyColumn(
+            state = listState,
             modifier = Modifier
                 .padding(innerPadding)
                 .fillMaxSize(),
@@ -191,7 +212,7 @@ fun SettingsScreen(
                             )
                             Spacer(modifier = Modifier.width(12.dp))
                             Text(
-                                text = if (isReorderMode) "Use arrows to move dictionaries. Top dictionaries appear first in search results." else "Enable dictionaries to include them in search results. You can download up to 10 dictionaries.",
+                                text = if (isReorderMode) "Drag the handles to prioritize dictionaries. Top dictionaries appear first in search results." else "Enable dictionaries to include them in search results. You can download up to 10 dictionaries.",
                                 style = MaterialTheme.typography.bodySmall,
                                 fontFamily = Manjari,
                                 color = if (isReorderMode) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onTertiaryContainer
@@ -202,7 +223,7 @@ fun SettingsScreen(
             }
 
             itemsIndexed(
-                items = dictionaries,
+                items = localDictionaries,
                 key = { _, dict -> dict.tableName ?: dict.hashCode() }
             ) { index, dict ->
                 DictionarySettingsItem(
@@ -211,20 +232,27 @@ fun SettingsScreen(
                     isReorderMode = isReorderMode,
                     onMoveUp = {
                         if (index > 0) {
-                            val newList = dictionaries.toMutableList()
+                            val newList = localDictionaries.toMutableList()
                             val item = newList.removeAt(index)
                             newList.add(index - 1, item)
-                            viewModel.updateDictionaryOrders(newList)
+                            localDictionaries = newList
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     },
                     onMoveDown = {
-                        if (index < dictionaries.size - 1) {
-                            val newList = dictionaries.toMutableList()
+                        if (index < localDictionaries.size - 1) {
+                            val newList = localDictionaries.toMutableList()
                             val item = newList.removeAt(index)
                             newList.add(index + 1, item)
-                            viewModel.updateDictionaryOrders(newList)
+                            localDictionaries = newList
+                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         }
                     },
+                    modifier = Modifier.animateItem(
+                        fadeInSpec = null,
+                        fadeOutSpec = null,
+                        placementSpec = spring(stiffness = Spring.StiffnessMediumLow)
+                    ),
                     onDownloadClick = { viewModel.downloadDictionary(dict.tableName) },
                     onPauseClick = { viewModel.pauseDownload(dict.tableName) },
                     onResumeClick = { viewModel.resumeDownload(dict.tableName) },
@@ -337,6 +365,7 @@ fun DictionarySettingsItem(
     isReorderMode: Boolean = false,
     onMoveUp: () -> Unit = {},
     onMoveDown: () -> Unit = {},
+    modifier: Modifier = Modifier,
     onDownloadClick: () -> Unit,
     onPauseClick: () -> Unit,
     onResumeClick: () -> Unit,
@@ -356,7 +385,7 @@ fun DictionarySettingsItem(
     val isStarting = startingDownloads.contains(dict.tableName)
     
     ListItem(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 8.dp),
@@ -390,12 +419,22 @@ fun DictionarySettingsItem(
         },
         leadingContent = {
             if (isReorderMode) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    IconButton(onClick = onMoveUp, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move Up")
-                    }
-                    IconButton(onClick = onMoveDown, modifier = Modifier.size(24.dp)) {
-                        Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move Down")
+                Surface(
+                    modifier = Modifier.size(40.dp),
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceEvenly,
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        IconButton(onClick = onMoveUp, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
+                        IconButton(onClick = onMoveDown, modifier = Modifier.size(20.dp)) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                        }
                     }
                 }
             } else {
@@ -425,7 +464,12 @@ fun DictionarySettingsItem(
         },
         trailingContent = {
             if (isReorderMode) {
-                Icon(Icons.Default.DragHandle, contentDescription = null, tint = MaterialTheme.colorScheme.outline)
+                Icon(
+                    Icons.Default.DragHandle, 
+                    contentDescription = "Reorder Handle", 
+                    tint = MaterialTheme.colorScheme.outline,
+                    modifier = Modifier.size(28.dp)
+                )
             } else {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (isDownloaded) {
