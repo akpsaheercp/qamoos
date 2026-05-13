@@ -69,12 +69,11 @@ class DictionaryViewModel(
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val searchResults: StateFlow<List<UnifiedEntry>> = combine(
-        _searchQuery.debounce(250).distinctUntilChanged(),
+        _searchQuery.debounce(300).distinctUntilChanged(),
         _isExactMatch,
         dictionaries,
-        dictionaryManager.downloadingTables,
         _filterDictionary
-    ) { query, exact, dicts, _, filter ->
+    ) { query, exact, dicts, filter ->
         var availableDicts = dicts.filter { 
             (it.isSelected == 1) && dictionaryManager.isDownloaded(it.tableName ?: "") 
         }
@@ -91,47 +90,40 @@ class DictionaryViewModel(
             val normalizedQuery = normalizeArabic(originalQuery)
             
             flow {
-                // Collect all attachments and dicts that are definitely ready
-                val readyDicts = mutableListOf<DictionaryInfo>()
-                val attachments = mutableListOf<Pair<String, String>>()
+                val allResults = mutableListOf<UnifiedEntry>()
                 
+                // Search each dictionary individually to ensure that a failure in one 
+                // (e.g., due to different table structure) doesn't prevent results from others.
                 dicts.forEach { dict ->
                     val tableName = dict.tableName ?: return@forEach
                     val path = dictionaryManager.getDictionaryPath(tableName) ?: return@forEach
-                    readyDicts.add(dict)
-                    attachments.add(Pair(path, tableName))
+                    
+                    val attachments = listOf(Pair(path, tableName))
+                    val sqliteQuery = buildMultiTableQuery(listOf(dict), normalizedQuery, exact)
+                    
+                    try {
+                        val result = arabicDao.searchWithAttachments(sqliteQuery, attachments)
+                        allResults.addAll(result)
+                    } catch (e: Exception) {
+                        Log.e("DictionaryViewModel", "Search failed for $tableName: ${e.message}")
+                    }
                 }
-
-                if (attachments.isEmpty()) {
-                    emit(emptyList<UnifiedEntry>())
-                    return@flow
-                }
-
-                // Search using a single query and one transaction for efficiency
-                val sqliteQuery = buildMultiTableQuery(readyDicts, normalizedQuery, exact)
                 
-                try {
-                    val result = arabicDao.searchWithAttachments(sqliteQuery, attachments)
-                    emit(result)
-                } catch (e: Exception) {
-                    Log.e("DictionaryViewModel", "Search failed", e)
-                    emit(emptyList<UnifiedEntry>())
-                }
+                // Sort results: matches to the exact query first, then by dictionary priority
+                val sortedResults = allResults.sortedWith(
+                    compareByDescending<UnifiedEntry> { 
+                        it.wordNoHarakah == normalizedQuery || it.word == originalQuery 
+                    }.thenBy { 
+                        it.displayOrder ?: 999
+                    }.thenBy { 
+                        it.word?.length ?: Int.MAX_VALUE 
+                    }
+                )
+                emit(sortedResults)
             }
-            .map { list ->
-                    list.sortedWith(
-                        compareByDescending<UnifiedEntry> { 
-                            it.wordNoHarakah == normalizedQuery || it.word == originalQuery 
-                        }.thenBy { 
-                            it.displayOrder 
-                        }.thenBy { 
-                            it.word?.length ?: Int.MAX_VALUE 
-                        }
-                    )
-                }
         }
     }
-.flowOn(kotlinx.coroutines.Dispatchers.IO)
+    .flowOn(kotlinx.coroutines.Dispatchers.IO)
     .stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
