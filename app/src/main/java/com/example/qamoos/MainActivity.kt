@@ -171,9 +171,8 @@ class MainActivity : AppCompatActivity() {
                                 viewModel = historyViewModel,
                                 onBack = { navController.popBackStack() },
                                 onEntryClick = { entry ->
-                                    val encodedWord = java.net.URLEncoder.encode(entry.word ?: "", "UTF-8")
-                                    val encodedDict = java.net.URLEncoder.encode(entry.dictionaryName, "UTF-8")
-                                    navController.navigate("standalone_detail/$encodedWord/$encodedDict")
+                                    dictionaryViewModel.onSearchQueryChange(entry.word ?: "")
+                                    navController.popBackStack("main_content", false)
                                 },
                                 fontSizeMultiplier = fontSizeMultiplier
                             )
@@ -183,42 +182,11 @@ class MainActivity : AppCompatActivity() {
                                 viewModel = favoriteViewModel,
                                 onBack = { navController.popBackStack() },
                                 onEntryClick = { entry ->
-                                    val encodedWord = java.net.URLEncoder.encode(entry.word ?: "", "UTF-8")
-                                    val encodedDict = java.net.URLEncoder.encode(entry.dictionaryName, "UTF-8")
-                                    navController.navigate("standalone_detail/$encodedWord/$encodedDict")
+                                    dictionaryViewModel.onSearchQueryChange(entry.word ?: "")
+                                    navController.popBackStack("main_content", false)
                                 },
                                 fontSizeMultiplier = fontSizeMultiplier
                             )
-                        }
-                        composable(
-                            route = "standalone_detail/{word}/{dictName}",
-                            arguments = listOf(
-                                navArgument("word") { type = NavType.StringType },
-                                navArgument("dictName") { type = NavType.StringType }
-                            )
-                        ) { backStackEntry ->
-                            val word = backStackEntry.arguments?.getString("word") ?: ""
-                            val dictName = backStackEntry.arguments?.getString("dictName") ?: ""
-                            
-                            val historyList by historyViewModel.historyEntries.collectAsState()
-                            val favoritesList by favoriteViewModel.favoriteEntries.collectAsState()
-                            
-                            val entry = historyList.find { it.word == word && it.dictionaryName == dictName }?.let {
-                                UnifiedEntry(it.id, it.word, it.word, it.meaning, it.dictionaryName)
-                            } ?: favoritesList.find { it.word == word && it.dictionaryName == dictName }?.let {
-                                UnifiedEntry(it.id, it.word, it.word, it.meaning, it.dictionaryName)
-                            }
-
-                            entry?.let {
-                                DetailPagerScreen(
-                                    results = listOf(it),
-                                    initialIndex = 0,
-                                    fontSizeMultiplier = fontSizeMultiplier,
-                                    favoriteViewModel = favoriteViewModel,
-                                    dictionaryViewModel = dictionaryViewModel,
-                                    onDismiss = { navController.popBackStack() }
-                                )
-                            }
                         }
                         composable(
                             route = "dictionary_detail/{id}",
@@ -637,19 +605,11 @@ fun DictionaryScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
                             ) 
                         },
-                        leadingIcon = { 
-                            Icon(
-                                Icons.Rounded.Search, 
-                                contentDescription = null, 
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.padding(start = 8.dp)
-                            ) 
-                        },
-                        trailingIcon = {
+                        leadingIcon = {
                             if (searchQuery.isNotEmpty()) {
                                 IconButton(
                                     onClick = { viewModel.onSearchQueryChange("") },
-                                    modifier = Modifier.padding(end = 4.dp)
+                                    modifier = Modifier.padding(start = 4.dp)
                                 ) {
                                     Icon(
                                         Icons.Default.Clear, 
@@ -658,6 +618,14 @@ fun DictionaryScreen(
                                     )
                                 }
                             }
+                        },
+                        trailingIcon = { 
+                            Icon(
+                                Icons.Rounded.Search, 
+                                contentDescription = null, 
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(end = 8.dp)
+                            ) 
                         },
                         singleLine = true,
                         shape = RoundedCornerShape(28.dp),

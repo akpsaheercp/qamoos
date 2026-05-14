@@ -200,19 +200,21 @@ class DictionaryManager(context: Context) {
                     .build()
                 
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use
-                    val body = response.body?.string() ?: return@use
-                    val map = body.lines()
-                        .filter { it.contains("  ") }
-                        .associate { 
-                            val parts = it.split("  ")
-                            val hash = parts[0].trim().lowercase()
-                            val name = parts[1].trim().lowercase()
-                            name to hash
+                    if (response.isSuccessful) {
+                        response.body?.string()?.let { body ->
+                            val map = body.lines()
+                                .filter { it.contains("  ") }
+                                .associate {
+                                    val parts = it.split("  ")
+                                    val hash = parts[0].trim().lowercase()
+                                    val name = parts[1].trim().lowercase()
+                                    name to hash
+                                }
+                            if (map.isNotEmpty()) {
+                                cachedChecksums = map
+                                return@withContext map
+                            }
                         }
-                    if (map.isNotEmpty()) {
-                        cachedChecksums = map
-                        return@withContext map
                     }
                 }
             } catch (e: Exception) {
@@ -391,14 +393,16 @@ class DictionaryManager(context: Context) {
                 .build()
             try {
                 client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful) return@use
-                    val body = response.body?.string() ?: return@use
-                    val jsonArray = JSONArray(body)
-                    val list = mutableListOf<String>()
-                    for (i in 0 until jsonArray.length()) {
-                        list.add(jsonArray.getString(i))
+                    if (response.isSuccessful) {
+                        response.body?.string()?.let { body ->
+                            val jsonArray = JSONArray(body)
+                            val list = mutableListOf<String>()
+                            for (i in 0 until jsonArray.length()) {
+                                list.add(jsonArray.getString(i))
+                            }
+                            return@withContext list
+                        }
                     }
-                    return@withContext list
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Failed to get manifest from $url")
